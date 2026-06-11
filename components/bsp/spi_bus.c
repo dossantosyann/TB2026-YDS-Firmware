@@ -22,7 +22,7 @@ esp_err_t spi_bus_display_init(spi_device_handle_t *out_handle)
 
     const spi_device_interface_config_t dev_cfg = {
         .clock_speed_hz = DISPLAY_SPI_HZ,
-        .mode = 0, /* TODO: confirm CPOL/CPHA in SSD1333 datasheet */
+        .mode = 0, /* clock idle low, latch on rising edge (datasheet 4-wire SPI timing) */
         .spics_io_num = PIN_DISP_CS,
         .queue_size = 2,
     };
