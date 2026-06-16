@@ -14,6 +14,11 @@
 /* Samples averaged per read to smooth pot/ADC noise. */
 #define POT_SAMPLES   (16)
 
+/* Shared by the channel and the calibration: the cali atten must match the channel's
+   or adc_pot_read returns wrong millivolts. Keep them defined in one place. */
+#define POT_ATTEN     ADC_ATTEN_DB_12       // ~0..3.1 V full scale, covers the 2.518 V top
+#define POT_BITWIDTH  ADC_BITWIDTH_DEFAULT  // 12-bit on ESP32
+
 /* PCM5242 digital-volume scale: register 0x00 = +24 dB, -0.5 dB per step. */
 #define DAC_GAIN_MAX_DB   (24.0f)
 #define DAC_DB_PER_STEP   (0.5f)
@@ -32,8 +37,8 @@ esp_err_t adc_pot_init(adc_oneshot_unit_handle_t *out_handle)
     if (err != ESP_OK) return err;
 
     const adc_oneshot_chan_cfg_t chan_cfg = {
-        .atten = ADC_ATTEN_DB_12,               // ~0..3.1 V full scale, covers the 2.518 V top
-        .bitwidth = ADC_BITWIDTH_DEFAULT,       // 12-bit on ESP32
+        .atten = POT_ATTEN,
+        .bitwidth = POT_BITWIDTH,
     };
     err = adc_oneshot_config_channel(*out_handle, POT_ADC_CHANNEL, &chan_cfg);
     if (err != ESP_OK) return err;
@@ -41,8 +46,8 @@ esp_err_t adc_pot_init(adc_oneshot_unit_handle_t *out_handle)
     // Turns raw counts into real millivolts using the chip's factory eFuse data.
     const adc_cali_line_fitting_config_t cali_cfg = {
         .unit_id = ADC_UNIT_1,
-        .atten = ADC_ATTEN_DB_12,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
+        .atten = POT_ATTEN,
+        .bitwidth = POT_BITWIDTH,
     };
     return adc_cali_create_scheme_line_fitting(&cali_cfg, &s_cali);
 }
