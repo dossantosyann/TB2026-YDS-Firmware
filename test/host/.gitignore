@@ -1,0 +1,4 @@
+# Host test build + render artifacts
+gfx_test
+*.ppm
+*.png
