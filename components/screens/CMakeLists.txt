@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS
+        "menu_screen.c"
         "root_menu.c"
         "audio/playlist_browser.c"
         "audio/now_playing.c"

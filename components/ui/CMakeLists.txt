@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "navigator.c" "menu_screen.c" "gfx/gfx.c"
-    INCLUDE_DIRS "." "gfx"
+    SRCS "gfx.c" "navigator.c"
+    INCLUDE_DIRS "."
     REQUIRES display_oled
 )

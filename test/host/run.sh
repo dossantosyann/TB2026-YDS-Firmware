@@ -6,10 +6,10 @@ here=$(dirname "$0")
 root="$here/../.."
 
 cc -std=c11 -Wall -Wextra \
-   -I"$root/components/ui/gfx" \
+   -I"$root/components/ui" \
    -I"$root/components/drivers/display_oled" \
    -I"$here/fakes" \
-   "$root/components/ui/gfx/gfx.c" "$here/gfx_test.c" \
+   "$root/components/ui/gfx.c" "$here/gfx_test.c" \
    -o "$here/gfx_test"
 
 "$here/gfx_test"

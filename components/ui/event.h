@@ -1,3 +1,5 @@
+// Input event vocabulary
+
 #pragma once
 
 typedef enum {

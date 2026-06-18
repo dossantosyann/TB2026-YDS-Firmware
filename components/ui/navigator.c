@@ -1,3 +1,5 @@
+// Screen stack router
+
 #include "navigator.h"
 
 #define NAV_STACK_MAX 8

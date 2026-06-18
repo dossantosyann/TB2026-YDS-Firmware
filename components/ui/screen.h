@@ -1,3 +1,5 @@
+// Screen interface contract
+
 #pragma once
 
 #include "event.h"
