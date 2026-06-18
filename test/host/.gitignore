@@ -1,5 +1,6 @@
 # Host test build + render artifacts
 gfx_test
 navigator_test
+menu_screen_test
 *.ppm
 *.png

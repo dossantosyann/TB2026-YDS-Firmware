@@ -21,3 +21,15 @@ cc -std=c11 -Wall -Wextra \
    -o "$here/navigator_test"
 
 "$here/navigator_test"
+
+# menu_screen render: asserts highlight + labels, writes menu_screen_test.ppm
+cc -std=c11 -Wall -Wextra \
+   -I"$root/components/ui" \
+   -I"$root/components/screens" \
+   -I"$root/components/drivers/display_oled" \
+   -I"$here/fakes" \
+   "$root/components/ui/gfx.c" "$root/components/ui/navigator.c" \
+   "$root/components/screens/menu_screen.c" "$here/menu_screen_test.c" \
+   -o "$here/menu_screen_test"
+
+"$here/menu_screen_test"
