@@ -10,6 +10,7 @@
 #include "adc.h"               /* TEST CODE */
 #include "audio_dac.h"         /* TEST CODE */
 #include "gpio_expander.h"     /* TEST CODE */
+#include "fuel_gauge.h"        /* TEST CODE */
 #include "headphone_amp.h"     /* TEST CODE */
 #include "display_oled.h"      /* TEST CODE */
 #include "driver/i2c_master.h" /* TEST CODE */
@@ -21,6 +22,9 @@
 
 /* ===== TEST CODE — bsp bring-up. Probes each bus and shows pass/fail on the OLED.
    Remove this whole block once the real drivers/services own the buses. ===== */
+
+#define GAUGE_TEST 1   /* 1: show the fuel-gauge snapshot instead of the BSP status screen */
+
 #define COL_OK   gfx_rgb(0, 220, 0)
 #define COL_FAIL gfx_rgb(220, 0, 0)
 
@@ -34,6 +38,7 @@ static adc_oneshot_unit_handle_t s_adc;
 static i2s_chan_handle_t         s_i2s;
 
 static bool s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok, s_exp_drv_ok;
+static bool s_gauge_drv_ok;
 
 /* Draw "label" in white, then OK (green) / FAIL (red) right after it. */
 static void draw_status(int x, int y, const char *label, bool ok)
@@ -78,25 +83,35 @@ static void render_status(int mv, uint8_t vol, int dac_rd, int exp_in)
         snprintf(buf, sizeof buf, "  in 0x%02X", exp_in);
         gfx_draw_text(8, 166, buf, GFX_WHITE, 1);
     }
+    
     gfx_flush();
 }
 
-/* Continuously feed a ~441 Hz sine to I2S so the DAC always has data to play.
-   Amplitude is kept low (~-12 dBFS); the pot still scales it via the DAC volume. */
-static void tone_task(void *arg)
+/* Dump the fuel-gauge snapshot. 'rd' is the result of fuel_gauge_read(). */
+static void render_gauge(const fuel_gauge_data_t *d, esp_err_t rd)
 {
-    (void)arg;
-    enum { N = 100 };                 /* 44100 / 100 = 441 Hz */
-    static int16_t buf[N * 2];        /* stereo, interleaved L,R */
-    for (int i = 0; i < N; i++) {
-        int16_t s = (int16_t)(8000.0f * sinf(2.0f * 3.14159265f * i / N));
-        buf[2 * i]     = s;
-        buf[2 * i + 1] = s;
+    gfx_clear(GFX_BLACK);
+    gfx_draw_text(8, 6, "FUEL GAUGE", GFX_WHITE, 2);
+
+    if (rd != ESP_OK) {
+        gfx_draw_text(8, 40, "READ FAIL", COL_FAIL, 1);
+        gfx_flush();
+        return;
     }
-    size_t written;
-    for (;;) {
-        i2s_channel_write(s_i2s, buf, sizeof buf, &written, portMAX_DELAY);
-    }
+
+    char buf[28];
+    int y = 30;
+    snprintf(buf, sizeof buf, "SoC   %5.1f %%",  d->soc_pct);     gfx_draw_text(8, y, buf, GFX_WHITE, 1); y += 14;
+    snprintf(buf, sizeof buf, "Volt  %5.3f V",   d->voltage_v);   gfx_draw_text(8, y, buf, GFX_WHITE, 1); y += 14;
+    snprintf(buf, sizeof buf, "Curr  %6.1f mA",  d->current_ma);  gfx_draw_text(8, y, buf, GFX_WHITE, 1); y += 14;
+    snprintf(buf, sizeof buf, "Cap   %5.0f mAh", d->rep_cap_mah); gfx_draw_text(8, y, buf, GFX_WHITE, 1); y += 14;
+    snprintf(buf, sizeof buf, "TTE   %6.0f s",   d->tte_s);       gfx_draw_text(8, y, buf, GFX_WHITE, 1); y += 14;
+    snprintf(buf, sizeof buf, "TTF   %6.0f s",   d->ttf_s);       gfx_draw_text(8, y, buf, GFX_WHITE, 1); y += 14;
+    snprintf(buf, sizeof buf, "Age   %5.1f %%",  d->age_pct);     gfx_draw_text(8, y, buf, GFX_WHITE, 1); y += 14;
+    snprintf(buf, sizeof buf, "Temp  %5.1f C",   d->die_temp_c);  gfx_draw_text(8, y, buf, GFX_WHITE, 1); y += 14;
+    snprintf(buf, sizeof buf, "Cycl  %5.2f",     d->cycles);      gfx_draw_text(8, y, buf, GFX_WHITE, 1);
+
+    gfx_flush();
 }
 /* ===== END TEST CODE ===== */
 
@@ -128,25 +143,10 @@ void app_init(void)
     s_adc_ok = adc_pot_init(&s_adc) == ESP_OK;
     s_dac_drv_ok = (s_i2c != NULL) && audio_dac_init(s_i2c) == ESP_OK;
     s_exp_drv_ok = (s_i2c != NULL) && gpio_expander_init(s_i2c) == ESP_OK;
+    s_gauge_drv_ok = (s_i2c != NULL) && fuel_gauge_init(s_i2c) == ESP_OK;
 
-    ESP_LOGI("bsp", "i2c gauge=%d exp=%d dac=%d | i2s=%d | adc=%d | dac_drv=%d | exp_drv=%d",
-             s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok, s_exp_drv_ok);
-
-    /* 440 Hz audio path test: feed I2S, then enable the chain in anti-pop order.
-       WARNING: turn the volume pot to MINIMUM before this runs. */
-    if (s_i2s_ok && s_dac_drv_ok && s_exp_drv_ok) {
-        xTaskCreate(tone_task, "tone", 4096, NULL, 5, NULL);
-        vTaskDelay(pdMS_TO_TICKS(50));     /* let the DAC lock to the I2S clocks */
-        audio_dac_output_enable(true);     /* XSMT high: un-mute the DAC output */
-        headphone_amp_enable(true);        /* amp on last, to avoid a pop */
-
-        vTaskDelay(pdMS_TO_TICKS(200));    /* let the PLL settle, then read diagnostics */
-        uint8_t clk = 0xFF, expin = 0xFF;
-        audio_dac_get_clock_status(&clk);
-        gpio_expander_read_all(&expin);
-        ESP_LOGW("audio", "DAC clk 0x5E=0x%02X (0=valid/locked) | EXP out check in=0x%02X (bits0/1 should be 1)",
-                 clk, expin);
-    }
+    ESP_LOGI("bsp", "i2c gauge=%d exp=%d dac=%d | i2s=%d | adc=%d | dac_drv=%d | exp_drv=%d | gauge_drv=%d",
+             s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok, s_exp_drv_ok, s_gauge_drv_ok);
     /* ===== END TEST CODE ===== */
 
     // TODO: volume pot (adc.h) — adc_pot_init() once at startup, then read in the
@@ -196,7 +196,13 @@ void app_run(void)
             if (gpio_expander_read_all(&in) == ESP_OK) exp_in = in;
         }
 
-        render_status(mv, vol, dac_rd, exp_in);
+        if (GAUGE_TEST) {
+            fuel_gauge_data_t d;
+            esp_err_t rd = s_gauge_drv_ok ? fuel_gauge_read(&d) : ESP_FAIL;
+            render_gauge(&d, rd);
+        } else {
+            render_status(mv, vol, dac_rd, exp_in);
+        }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     /* ===== END TEST CODE ===== */
