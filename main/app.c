@@ -1,9 +1,44 @@
 #include "app.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_log.h"      /* TEST CODE */
+#include "esp_err.h"      /* TEST CODE */
+#include "gfx.h"          /* TEST CODE */
+#include "spi_bus.h"      /* TEST CODE */
+#include "display_oled.h" /* TEST CODE */
+#include "driver/gpio.h"
+#include "board_pins.h"
 
 void app_init(void)
 {
+    /* Self-hold power: drive EnableReg (GPIO4) HIGH before anything else.
+       The regulator is only latched on by USB/the power button at boot; if the
+       ESP32 doesn't take over the hold immediately, releasing them cuts power.
+       Preload the output register high, THEN enable the driver, so the pin never
+       drives low (even briefly) on its way up. */
+    gpio_set_level(PIN_REG_EN, 1);
+    gpio_set_direction(PIN_REG_EN, GPIO_MODE_OUTPUT);
+
+    /* ===== TEST CODE — remove once the display is wired in for real ===== */
+    spi_device_handle_t disp_spi;
+    ESP_ERROR_CHECK(spi_bus_display_init(&disp_spi));
+    ESP_ERROR_CHECK(display_oled_init(disp_spi));
+    gfx_clear(GFX_BLACK);
+    gfx_draw_text(43, 84, "ca fonctionne !", GFX_WHITE, 1);
+    gfx_flush();
+    ESP_LOGI("test", "display init + gfx flushed");
+
+    /* ===== TEST CODE — button A health check (GPIO39, input-only, no internal pull).
+       WARNING: this button drives ~4.2V (VBAT) when pressed, above the GPIO abs-max
+       (~3.6V). Reading is passive; keep presses short until the hardware is fixed.
+       Poll loop lives in app_run(). ===== */
+    const gpio_config_t btn_a = {
+        .pin_bit_mask = 1ULL << PIN_BTN_A,
+        .mode = GPIO_MODE_INPUT,
+    };
+    ESP_ERROR_CHECK(gpio_config(&btn_a));
+    /* ===== END TEST CODE ===== */
+
     // TODO: volume pot (adc.h) — adc_pot_init() once at startup, then read in the
     // maintenance/UI task, not here. No ULP: it only saves power while the main cores
     // deep-sleep, which can't happen during playback, and the read is negligible next
@@ -27,7 +62,15 @@ void app_init(void)
 
 void app_run(void)
 {
+    /* ===== TEST CODE — log button A level only when it changes ===== */
+    int last = -1;
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        int lvl = gpio_get_level(PIN_BTN_A);
+        if (lvl != last) {
+            ESP_LOGI("btn", "button A = %d (%s)", lvl, lvl ? "PRESSED (high)" : "released (low)");
+            last = lvl;
+        }
+        vTaskDelay(pdMS_TO_TICKS(30));
     }
+    /* ===== END TEST CODE ===== */
 }
