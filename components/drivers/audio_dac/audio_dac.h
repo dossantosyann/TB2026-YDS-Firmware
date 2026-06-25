@@ -84,18 +84,6 @@ esp_err_t audio_dac_mute(bool mute);
 esp_err_t audio_dac_standby(bool standby);
 
 /**
- * @brief Enable or mute the analog output via the hardware XSMT pin (on the expander).
- *
- * Distinct from audio_dac_mute() (the I2C soft mute): this drives the PCM5242 XSMT
- * line, which the board routes through the GPIO expander. Requires gpio_expander_init()
- * to have run first. Power sequencing relative to the amplifier is the caller's concern.
- *
- * @param enable  true = drive XSMT high (output on), false = XSMT low (muted).
- * @return ESP_OK on success, or the expander I2C error.
- */
-esp_err_t audio_dac_output_enable(bool enable);
-
-/**
  * @brief Read the clock/PLL status register (0x5E) for bring-up diagnostics.
  *
  * Each flag is 0 when valid: D5 PLL unlocked, D2 SCK invalid, D1 BCK invalid,

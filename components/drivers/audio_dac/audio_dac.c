@@ -1,7 +1,5 @@
 #include "audio_dac.h"
 #include "i2c_bus.h"
-#include "gpio_expander.h"
-#include "board_pins.h"
 
 #define PCM5242_ADDR     0x4C
 #define DAC_I2C_TIMEOUT  100  /* ms; fail loud rather than block forever */
@@ -175,12 +173,6 @@ esp_err_t audio_dac_mute(bool mute)
 esp_err_t audio_dac_standby(bool standby)
 {
     return write_reg(REG_STANDBY, standby ? STANDBY_REQ : 0x00);
-}
-
-esp_err_t audio_dac_output_enable(bool enable)
-{
-    /* XSMT (expander IO0) is active-low: high = un-mute, low = soft mute. */
-    return gpio_expander_set(EXP_DAC_MUTE, enable);
 }
 
 esp_err_t audio_dac_get_clock_status(uint8_t *status)

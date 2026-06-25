@@ -11,7 +11,6 @@
 #include "audio_dac.h"         /* TEST CODE */
 #include "gpio_expander.h"     /* TEST CODE */
 #include "fuel_gauge.h"        /* TEST CODE */
-#include "headphone_amp.h"     /* TEST CODE */
 #include "display_oled.h"      /* TEST CODE */
 #include "root_menu.h"         /* TEST CODE */
 #include "driver/i2c_master.h" /* TEST CODE */
