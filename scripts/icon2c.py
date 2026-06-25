@@ -11,9 +11,13 @@ A source pixel becomes ink (1) when it is dark (grayscale < threshold), which
 matches a black drawing on a white background. Use --invert to flip. Fully
 transparent pixels (alpha < threshold) are always 0.
 
+The icons live in a single translation unit so each bitmap sits once in flash:
+generate the definitions into icons.c (default) and the matching extern
+declarations into icons.h (--decl), then include icons.h from your screens.
+
 Usage:
-  python3 scripts/icon2c.py play.png folder.png > icons.h
-  python3 scripts/icon2c.py icon.png --invert --threshold 128 -o icon.h
+  python3 scripts/icon2c.py play.png folder.png -o components/ui/icons.c
+  python3 scripts/icon2c.py play.png folder.png --decl -o components/ui/icons.h
 """
 
 import argparse
@@ -32,7 +36,8 @@ def symbol_name(path: Path) -> str:
     return "icon_" + stem
 
 
-def convert(path: Path, threshold: int, invert: bool) -> str:
+def render(path: Path, threshold: int, invert: bool):
+    """Pack an image into 1-bpp rows. Returns (name, w, h, stride, rows)."""
     img = Image.open(path).convert("RGBA")
     w, h = img.size
     px = img.load()
@@ -54,12 +59,14 @@ def convert(path: Path, threshold: int, invert: bool) -> str:
                 row[x // 8] |= 0x80 >> (x % 8)
         rows.append(row)
 
-    name = symbol_name(path)
+    return symbol_name(path), w, h, stride, rows
+
+
+def emit_def(path: Path, name: str, w: int, h: int, stride: int, rows) -> str:
+    """Definition block for icons.c: the bitmap array with external linkage."""
     lines = [
         f"/* {path.name}: {w}x{h}, 1 bpp, MSB-first, stride {stride} bytes/row. */",
-        f"#define {name.upper()}_W {w}",
-        f"#define {name.upper()}_H {h}",
-        f"static const uint8_t {name}[{stride * h}] = {{",
+        f"const uint8_t {name}[{stride * h}] = {{",
     ]
     for y, row in enumerate(rows):
         hexed = ", ".join(f"0x{byte:02X}" for byte in row)
@@ -67,6 +74,16 @@ def convert(path: Path, threshold: int, invert: bool) -> str:
         lines.append(f"    {hexed}{comma}")
     lines.append("};")
     return "\n".join(lines)
+
+
+def emit_decl(path: Path, name: str, w: int, h: int) -> str:
+    """Declaration block for icons.h: dimensions plus an extern reference."""
+    return "\n".join([
+        f"/* {path.name}: {w}x{h}, 1 bpp, MSB-first. */",
+        f"#define {name.upper()}_W {w}",
+        f"#define {name.upper()}_H {h}",
+        f"extern const uint8_t {name}[];",
+    ])
 
 
 def main() -> int:
@@ -77,13 +94,23 @@ def main() -> int:
                     help="luminance/alpha cutoff 0..255 (default 128)")
     ap.add_argument("--invert", action="store_true",
                     help="treat light pixels as ink instead of dark")
+    ap.add_argument("--decl", action="store_true",
+                    help="emit a header (extern declarations + W/H) instead of "
+                         "the icons.c definitions")
     ap.add_argument("-o", "--output", type=Path,
                     help="write to this file instead of stdout")
     args = ap.parse_args()
 
-    blocks = ["#pragma once", "#include <stdint.h>", ""]
+    if args.decl:
+        blocks = ["#pragma once", "#include <stdint.h>", ""]
+    else:
+        blocks = ["#include <stdint.h>", ""]
     for path in args.images:
-        blocks.append(convert(path, args.threshold, args.invert))
+        name, w, h, stride, rows = render(path, args.threshold, args.invert)
+        if args.decl:
+            blocks.append(emit_decl(path, name, w, h))
+        else:
+            blocks.append(emit_def(path, name, w, h, stride, rows))
         blocks.append("")
     text = "\n".join(blocks)
 
