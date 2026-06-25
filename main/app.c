@@ -8,6 +8,7 @@
 #include "i2c_bus.h"           /* TEST CODE */
 #include "i2s_bus.h"           /* TEST CODE */
 #include "adc.h"               /* TEST CODE */
+#include "audio_dac.h"         /* TEST CODE */
 #include "display_oled.h"      /* TEST CODE */
 #include "driver/i2c_master.h" /* TEST CODE */
 #include <stdio.h>             /* TEST CODE */
@@ -29,7 +30,7 @@ static i2c_master_bus_handle_t   s_i2c;
 static adc_oneshot_unit_handle_t s_adc;
 static i2s_chan_handle_t         s_i2s;
 
-static bool s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok;
+static bool s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok;
 
 /* Draw "label" in white, then OK (green) / FAIL (red) right after it. */
 static void draw_status(int x, int y, const char *label, bool ok)
@@ -39,24 +40,32 @@ static void draw_status(int x, int y, const char *label, bool ok)
     gfx_draw_text(lx, y, ok ? "OK" : "FAIL", ok ? COL_OK : COL_FAIL, 1);
 }
 
-/* Full status screen. Static results cached in app_init; mv/vol are live. */
-static void render_status(int mv, uint8_t vol)
+/* Full status screen. Static results cached in app_init; mv/vol/dac_rd are live. */
+static void render_status(int mv, uint8_t vol, int dac_rd)
 {
     gfx_clear(GFX_BLACK);
     gfx_draw_text(8, 6, "BSP BRING-UP", GFX_WHITE, 2);
 
     gfx_draw_text(8, 30, "I2C bus:", GFX_WHITE, 1);
-    draw_status(8, 44, "  GAUGE 0x36 ", s_gauge_ok);
-    draw_status(8, 56, "  EXP   0x38 ", s_exp_ok);
-    draw_status(8, 68, "  DAC   0x4C ", s_dac_ok);
+    draw_status(8, 42, "  GAUGE 0x36 ", s_gauge_ok);
+    draw_status(8, 52, "  EXP   0x38 ", s_exp_ok);
+    draw_status(8, 62, "  DAC   0x4C ", s_dac_ok);
 
-    draw_status(8, 86, "I2S bus:     ", s_i2s_ok);
+    draw_status(8, 78, "I2S bus:     ", s_i2s_ok);
 
-    gfx_draw_text(8, 104, "ADC pot:", s_adc_ok ? GFX_WHITE : COL_FAIL, 1);
+    gfx_draw_text(8, 94, "ADC pot:", s_adc_ok ? GFX_WHITE : COL_FAIL, 1);
     if (s_adc_ok) {
         char buf[24];
         snprintf(buf, sizeof buf, "  mV %4d  vol 0x%02X", mv, vol);
-        gfx_draw_text(8, 118, buf, GFX_WHITE, 1);
+        gfx_draw_text(8, 106, buf, GFX_WHITE, 1);
+    }
+
+    /* DAC driver: wrote 'vol', read 'dac_rd' back over I2C; match = link OK. */
+    draw_status(8, 124, "DAC drv:     ", s_dac_drv_ok && dac_rd == vol);
+    if (s_dac_drv_ok) {
+        char buf[24];
+        snprintf(buf, sizeof buf, "  wr 0x%02X rd 0x%02X", vol, dac_rd);
+        gfx_draw_text(8, 136, buf, GFX_WHITE, 1);
     }
     gfx_flush();
 }
@@ -88,9 +97,10 @@ void app_init(void)
 
     s_i2s_ok = i2s_bus_init(&s_i2s) == ESP_OK;  /* bus mounts; no audio without DAC setup */
     s_adc_ok = adc_pot_init(&s_adc) == ESP_OK;
+    s_dac_drv_ok = (s_i2c != NULL) && audio_dac_init(s_i2c) == ESP_OK;
 
-    ESP_LOGI("bsp", "i2c gauge=%d exp=%d dac=%d | i2s=%d | adc=%d",
-             s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok);
+    ESP_LOGI("bsp", "i2c gauge=%d exp=%d dac=%d | i2s=%d | adc=%d | dac_drv=%d",
+             s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok);
     /* ===== END TEST CODE ===== */
 
     // TODO: volume pot (adc.h) — adc_pot_init() once at startup, then read in the
@@ -124,7 +134,16 @@ void app_run(void)
         if (s_adc_ok && adc_pot_read(s_adc, &mv) == ESP_OK) {
             vol = adc_pot_to_volume(mv);
         }
-        render_status(mv, vol);
+
+        /* Push the pot volume to the DAC over I2C and read it back to confirm the link. */
+        int dac_rd = -1;
+        if (s_dac_drv_ok) {
+            uint8_t rd;
+            audio_dac_set_volume(vol);
+            if (audio_dac_get_volume(&rd) == ESP_OK) dac_rd = rd;
+        }
+
+        render_status(mv, vol, dac_rd);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     /* ===== END TEST CODE ===== */
