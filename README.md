@@ -9,6 +9,10 @@ developed as a Bachelor thesis project (TB 2026). Written in C on ESP-IDF / Free
 |----------|-------|
 | **MCU**  | ESP32-WROVER-E (PSRAM), flashed via CP2102N (auto-flash). USB-C routed by a TC7USB40MU mux to either CP2102N or charger |
 | **Audio**| Differential chain PCM5242 (I²S) → RC filter → MAX97220 → 3.5 mm jack. Bluetooth A2DP output (AVRCP volume) |
+
+> **Sample rates:** the PCM5242 derives its PLL from BCK (= 64·fS, SCK grounded). The PLL
+> needs BCK ≥ 1 MHz, so rates **below 16 kHz cannot lock and are rejected** by
+> `audio_dac_set_sample_rate()`. Supported: 16, 22.05, 24, 32, 44.1, 48, 88.2, 96, 176.4, 192 kHz.
 | **Power**| MAX77757 charger, MAX17260 fuel gauge (I²C), TPS62A01 buck, XC6120 supervisor (deep-discharge protection) |
 | **UI**   | 176×176 SPI OLED (SSD1333), SPI microSD (FATFS), I²C GPIO expander PI4IOE5V9554A (buttons, DAC mute, amp shutdown), volume potentiometer on ADC |
 

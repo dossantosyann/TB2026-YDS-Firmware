@@ -10,10 +10,12 @@
 #include "adc.h"               /* TEST CODE */
 #include "audio_dac.h"         /* TEST CODE */
 #include "gpio_expander.h"     /* TEST CODE */
+#include "headphone_amp.h"     /* TEST CODE */
 #include "display_oled.h"      /* TEST CODE */
 #include "driver/i2c_master.h" /* TEST CODE */
 #include <stdio.h>             /* TEST CODE */
 #include <string.h>            /* TEST CODE */
+#include <math.h>              /* TEST CODE */
 #include "driver/gpio.h"
 #include "board_pins.h"
 
@@ -78,6 +80,24 @@ static void render_status(int mv, uint8_t vol, int dac_rd, int exp_in)
     }
     gfx_flush();
 }
+
+/* Continuously feed a ~441 Hz sine to I2S so the DAC always has data to play.
+   Amplitude is kept low (~-12 dBFS); the pot still scales it via the DAC volume. */
+static void tone_task(void *arg)
+{
+    (void)arg;
+    enum { N = 100 };                 /* 44100 / 100 = 441 Hz */
+    static int16_t buf[N * 2];        /* stereo, interleaved L,R */
+    for (int i = 0; i < N; i++) {
+        int16_t s = (int16_t)(8000.0f * sinf(2.0f * 3.14159265f * i / N));
+        buf[2 * i]     = s;
+        buf[2 * i + 1] = s;
+    }
+    size_t written;
+    for (;;) {
+        i2s_channel_write(s_i2s, buf, sizeof buf, &written, portMAX_DELAY);
+    }
+}
 /* ===== END TEST CODE ===== */
 
 void app_init(void)
@@ -111,6 +131,22 @@ void app_init(void)
 
     ESP_LOGI("bsp", "i2c gauge=%d exp=%d dac=%d | i2s=%d | adc=%d | dac_drv=%d | exp_drv=%d",
              s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok, s_exp_drv_ok);
+
+    /* 440 Hz audio path test: feed I2S, then enable the chain in anti-pop order.
+       WARNING: turn the volume pot to MINIMUM before this runs. */
+    if (s_i2s_ok && s_dac_drv_ok && s_exp_drv_ok) {
+        xTaskCreate(tone_task, "tone", 4096, NULL, 5, NULL);
+        vTaskDelay(pdMS_TO_TICKS(50));     /* let the DAC lock to the I2S clocks */
+        audio_dac_output_enable(true);     /* XSMT high: un-mute the DAC output */
+        headphone_amp_enable(true);        /* amp on last, to avoid a pop */
+
+        vTaskDelay(pdMS_TO_TICKS(200));    /* let the PLL settle, then read diagnostics */
+        uint8_t clk = 0xFF, expin = 0xFF;
+        audio_dac_get_clock_status(&clk);
+        gpio_expander_read_all(&expin);
+        ESP_LOGW("audio", "DAC clk 0x5E=0x%02X (0=valid/locked) | EXP out check in=0x%02X (bits0/1 should be 1)",
+                 clk, expin);
+    }
     /* ===== END TEST CODE ===== */
 
     // TODO: volume pot (adc.h) — adc_pot_init() once at startup, then read in the

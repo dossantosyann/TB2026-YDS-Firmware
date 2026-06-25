@@ -2,7 +2,8 @@
  * @file audio_dac.h
  * @brief PCM5242 DAC control over I2C (volume, mute).
  *
- * The DAC clocks itself from the I2S bus (auto-clock, see bsp/i2s_bus.c); this driver
+ * SCK is grounded on this board, so the DAC cannot auto-clock; this driver programs the
+ * PLL and clock dividers off BCK by hand (see audio_dac_set_sample_rate()). It otherwise
  * only handles the I2C control port at address 0x4C. Mute also depends on the XSMT pin
  * on the GPIO expander, which this driver does not touch.
  */
@@ -28,6 +29,23 @@
  * @return ESP_OK on success, or the I2C error (e.g. if the DAC does not ACK).
  */
 esp_err_t audio_dac_init(i2c_master_bus_handle_t bus);
+
+/**
+ * @brief Retune the PLL and clock dividers for a new sample rate.
+ *
+ * Call this whenever the track's sample rate changes (alongside i2s_bus_reconfig()).
+ * BCK is the PLL reference (= 64*fS), so rates below 16 kHz drive BCK under the PLL's
+ * 1 MHz input minimum and cannot lock; they are rejected. Supported: 16, 22.05, 24, 32,
+ * 44.1, 48, 88.2, 96, 176.4, 192 kHz.
+ *
+ * Holds the DAC in standby across the PLL rewrite and powers it back up itself, so the
+ * call is safe mid-playback. It does not soft-mute: ramp audio_dac_mute()/the amp around
+ * the call yourself if you need a pop-free transition.
+ *
+ * @param rate_hz  Sample rate in Hz.
+ * @return ESP_OK on success, ESP_ERR_NOT_SUPPORTED for an unsupported rate, or the I2C error.
+ */
+esp_err_t audio_dac_set_sample_rate(uint32_t rate_hz);
 
 /**
  * @brief Set the digital volume; the right channel follows the left (see audio_dac_init()).
@@ -76,5 +94,17 @@ esp_err_t audio_dac_standby(bool standby);
  * @return ESP_OK on success, or the expander I2C error.
  */
 esp_err_t audio_dac_output_enable(bool enable);
+
+/**
+ * @brief Read the clock/PLL status register (0x5E) for bring-up diagnostics.
+ *
+ * Each flag is 0 when valid: D5 PLL unlocked, D2 SCK invalid, D1 BCK invalid,
+ * D0 fS invalid. A value near 0x00 means the DAC sees valid clocks and the PLL is
+ * locked; high bits mean missing/invalid clocks (e.g. SCK not grounded).
+ *
+ * @param[out] status  Receives the raw register byte.
+ * @return ESP_OK on success, or the I2C error.
+ */
+esp_err_t audio_dac_get_clock_status(uint8_t *status);
 
 /** @} */
