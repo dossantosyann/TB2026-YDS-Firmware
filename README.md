@@ -7,8 +7,8 @@ developed as a Bachelor thesis project (TB 2026). Written in C on ESP-IDF / Free
 
 | Domain   | Parts |
 |----------|-------|
-| **MCU**  | ESP32-WROVER-E (PSRAM), flashed via CP2102N (auto-flash); USB-C routed by a TC7USB40MU mux to either CP2102N or charger |
-| **Audio**| Differential chain PCM5242 (I²S) → RC filter → MAX97220 → 3.5 mm jack; Bluetooth A2DP output (AVRCP volume) |
+| **MCU**  | ESP32-WROVER-E (PSRAM), flashed via CP2102N (auto-flash). USB-C routed by a TC7USB40MU mux to either CP2102N or charger |
+| **Audio**| Differential chain PCM5242 (I²S) → RC filter → MAX97220 → 3.5 mm jack. Bluetooth A2DP output (AVRCP volume) |
 | **Power**| MAX77757 charger, MAX17260 fuel gauge (I²C), TPS62A01 buck, XC6120 supervisor (deep-discharge protection) |
 | **UI**   | 176×176 SPI OLED (SSD1333), SPI microSD (FATFS), I²C GPIO expander PI4IOE5V9554A (buttons, DAC mute, amp shutdown), volume potentiometer on ADC |
 
@@ -17,7 +17,7 @@ developed as a Bachelor thesis project (TB 2026). Written in C on ESP-IDF / Free
 Layered C, from the hardware up:
 
 ```
-bsp        SPI / I2C / I2S buses + volume ADC      (this layer is documented)
+bsp        SPI / I2C / I2S buses + volume ADC
 drivers    chip drivers on top of the buses
 services   audio pipeline, bluetooth, storage…
 ui/screens framebuffer rendering (no LVGL) + navigation
@@ -38,8 +38,7 @@ idf.py monitor      # serial console
 
 ## Documentation
 
-API reference is generated with **Doxygen** (the page you may be reading is this README,
-served as the doc home page):
+API reference is generated with **Doxygen**:
 
 ```bash
 doxygen Doxyfile        # output in html/index.html
