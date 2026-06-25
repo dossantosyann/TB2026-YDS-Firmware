@@ -13,6 +13,7 @@
 #include "fuel_gauge.h"        /* TEST CODE */
 #include "headphone_amp.h"     /* TEST CODE */
 #include "display_oled.h"      /* TEST CODE */
+#include "root_menu.h"         /* TEST CODE */
 #include "driver/i2c_master.h" /* TEST CODE */
 #include <stdio.h>             /* TEST CODE */
 #include <string.h>            /* TEST CODE */
@@ -24,6 +25,7 @@
    Remove this whole block once the real drivers/services own the buses. ===== */
 
 #define GAUGE_TEST 1   /* 1: show the fuel-gauge snapshot instead of the BSP status screen */
+#define MENU_TEST  1   /* 1: show the root menu instead of the bring-up screens */
 
 #define COL_OK   gfx_rgb(0, 220, 0)
 #define COL_FAIL gfx_rgb(220, 0, 0)
@@ -172,6 +174,17 @@ void app_init(void)
 
 void app_run(void)
 {
+    /* ===== TEST CODE — show the root menu. The display is already up from
+       app_init(). The menu is static, so render once and idle (no redraw).
+       Set MENU_TEST 0 to fall back to the bring-up screens below. ===== */
+    if (MENU_TEST) {
+        screen_t *s = root_menu();
+        s->render(s);
+        gfx_flush();
+        for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    /* ===== END TEST CODE ===== */
+
     /* ===== TEST CODE — refresh the status screen at ~10 Hz with live pot values.
        Turn the knob: mV and the volume byte should track. ===== */
     for (;;) {

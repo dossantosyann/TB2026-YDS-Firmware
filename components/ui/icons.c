@@ -40,7 +40,7 @@ const uint8_t icon_music[128] = {
 /* stats.png: 32x32, 1 bpp, MSB-first, stride 4 bytes/row. */
 #define ICON_STATS_W 32
 #define ICON_STATS_H 32
-static const uint8_t icon_stats[128] = {
+const uint8_t icon_stats[128] = {
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
     0x30, 0x00, 0x00, 0x00,
@@ -79,7 +79,7 @@ static const uint8_t icon_stats[128] = {
 /* settings1.png: 32x32, 1 bpp, MSB-first, stride 4 bytes/row. */
 #define ICON_SETTINGS1_W 32
 #define ICON_SETTINGS1_H 32
-static const uint8_t icon_settings1[128] = {
+const uint8_t icon_settings1[128] = {
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
     0x04, 0x20, 0x03, 0xE0,
@@ -118,7 +118,7 @@ static const uint8_t icon_settings1[128] = {
 /* settings2.png: 32x32, 1 bpp, MSB-first, stride 4 bytes/row. */
 #define ICON_SETTINGS2_W 32
 #define ICON_SETTINGS2_H 32
-static const uint8_t icon_settings2[128] = {
+const uint8_t icon_settings2[128] = {
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x04, 0x20, 0x00,

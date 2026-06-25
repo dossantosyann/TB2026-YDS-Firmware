@@ -33,3 +33,15 @@ cc -std=c11 -Wall -Wextra \
    -o "$here/menu_screen_test"
 
 "$here/menu_screen_test"
+
+# root_menu render: asserts the 3 white icon tiles, writes root_menu_test.ppm
+cc -std=c11 -Wall -Wextra \
+   -I"$root/components/ui" \
+   -I"$root/components/screens" \
+   -I"$root/components/drivers/display_oled" \
+   -I"$here/fakes" \
+   "$root/components/ui/gfx.c" "$root/components/ui/icons.c" \
+   "$root/components/screens/root_menu.c" "$here/root_menu_test.c" \
+   -o "$here/root_menu_test"
+
+"$here/root_menu_test"
