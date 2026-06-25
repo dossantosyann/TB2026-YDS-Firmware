@@ -56,6 +56,21 @@ void gfx_draw_rect(int x, int y, int w, int h, gfx_color_t color);
  */
 void gfx_draw_text(int x, int y, const char *s, gfx_color_t color, int scale);
 
+/**
+ * @brief Draw a 1-bpp bitmap; set bits are drawn in @p color, clear bits are skipped.
+ *
+ * The bitmap is row-major, MSB-first within each byte (bit 7 = leftmost pixel),
+ * with each row padded to a whole number of bytes (stride = (w + 7) / 8). This is
+ * the format emitted by scripts/icon2c.py. Clear bits leave the framebuffer
+ * untouched, so the background shows through (transparency).
+ *
+ * @param x,y      Top-left position in the framebuffer.
+ * @param w,h      Bitmap dimensions in pixels.
+ * @param bitmap   1-bpp pixel data, (w + 7) / 8 * h bytes.
+ * @param color    Color for set bits.
+ */
+void gfx_blit_1bpp(int x, int y, int w, int h, const uint8_t *bitmap, gfx_color_t color);
+
 /** @brief Blit the framebuffer to the OLED over SPI. */
 void gfx_flush(void);
 

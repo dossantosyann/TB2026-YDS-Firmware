@@ -96,6 +96,17 @@ void gfx_draw_text(int x, int y, const char *s, gfx_color_t color, int scale)
     }
 }
 
+void gfx_blit_1bpp(int x, int y, int w, int h, const uint8_t *bitmap, gfx_color_t color)
+{
+    const int stride = (w + 7) / 8;     /* bytes per row, matching icon2c.py */
+    for (int row = 0; row < h; row++) {
+        const uint8_t *line = &bitmap[row * stride];
+        for (int col = 0; col < w; col++)
+            if ((line[col >> 3] >> (7 - (col & 7))) & 1)
+                gfx_pixel(x + col, y + row, color);     /* gfx_pixel clips to the canvas */
+    }
+}
+
 void gfx_flush(void)
 {
     /* The framebuffer is native RGB565; any panel byte-order/remap (SSD1333 cmd 0x64)
