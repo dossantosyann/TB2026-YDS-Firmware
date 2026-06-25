@@ -9,6 +9,7 @@
 #include "i2s_bus.h"           /* TEST CODE */
 #include "adc.h"               /* TEST CODE */
 #include "audio_dac.h"         /* TEST CODE */
+#include "gpio_expander.h"     /* TEST CODE */
 #include "display_oled.h"      /* TEST CODE */
 #include "driver/i2c_master.h" /* TEST CODE */
 #include <stdio.h>             /* TEST CODE */
@@ -30,7 +31,7 @@ static i2c_master_bus_handle_t   s_i2c;
 static adc_oneshot_unit_handle_t s_adc;
 static i2s_chan_handle_t         s_i2s;
 
-static bool s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok;
+static bool s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok, s_exp_drv_ok;
 
 /* Draw "label" in white, then OK (green) / FAIL (red) right after it. */
 static void draw_status(int x, int y, const char *label, bool ok)
@@ -40,8 +41,8 @@ static void draw_status(int x, int y, const char *label, bool ok)
     gfx_draw_text(lx, y, ok ? "OK" : "FAIL", ok ? COL_OK : COL_FAIL, 1);
 }
 
-/* Full status screen. Static results cached in app_init; mv/vol/dac_rd are live. */
-static void render_status(int mv, uint8_t vol, int dac_rd)
+/* Full status screen. Static results cached in app_init; mv/vol/dac_rd/exp_in are live. */
+static void render_status(int mv, uint8_t vol, int dac_rd, int exp_in)
 {
     gfx_clear(GFX_BLACK);
     gfx_draw_text(8, 6, "BSP BRING-UP", GFX_WHITE, 2);
@@ -66,6 +67,14 @@ static void render_status(int mv, uint8_t vol, int dac_rd)
         char buf[24];
         snprintf(buf, sizeof buf, "  wr 0x%02X rd 0x%02X", vol, dac_rd);
         gfx_draw_text(8, 136, buf, GFX_WHITE, 1);
+    }
+
+    /* Expander: live input port; press a button and watch its bit change. */
+    draw_status(8, 154, "EXP drv:     ", s_exp_drv_ok);
+    if (s_exp_drv_ok) {
+        char buf[24];
+        snprintf(buf, sizeof buf, "  in 0x%02X", exp_in);
+        gfx_draw_text(8, 166, buf, GFX_WHITE, 1);
     }
     gfx_flush();
 }
@@ -98,9 +107,10 @@ void app_init(void)
     s_i2s_ok = i2s_bus_init(&s_i2s) == ESP_OK;  /* bus mounts; no audio without DAC setup */
     s_adc_ok = adc_pot_init(&s_adc) == ESP_OK;
     s_dac_drv_ok = (s_i2c != NULL) && audio_dac_init(s_i2c) == ESP_OK;
+    s_exp_drv_ok = (s_i2c != NULL) && gpio_expander_init(s_i2c) == ESP_OK;
 
-    ESP_LOGI("bsp", "i2c gauge=%d exp=%d dac=%d | i2s=%d | adc=%d | dac_drv=%d",
-             s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok);
+    ESP_LOGI("bsp", "i2c gauge=%d exp=%d dac=%d | i2s=%d | adc=%d | dac_drv=%d | exp_drv=%d",
+             s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok, s_exp_drv_ok);
     /* ===== END TEST CODE ===== */
 
     // TODO: volume pot (adc.h) — adc_pot_init() once at startup, then read in the
@@ -143,7 +153,14 @@ void app_run(void)
             if (audio_dac_get_volume(&rd) == ESP_OK) dac_rd = rd;
         }
 
-        render_status(mv, vol, dac_rd);
+        /* Read all expander inputs; pressing a button flips its bit. */
+        int exp_in = -1;
+        if (s_exp_drv_ok) {
+            uint8_t in;
+            if (gpio_expander_read_all(&in) == ESP_OK) exp_in = in;
+        }
+
+        render_status(mv, vol, dac_rd, exp_in);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     /* ===== END TEST CODE ===== */

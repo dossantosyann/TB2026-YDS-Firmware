@@ -57,3 +57,17 @@
 #define PIN_REG_EN       (4)   ///< EnableReg
 #define PIN_USB_DIR      (22)  ///< TC7USB40MU USB mux select
 ///@}
+
+/** @name GPIO expander channels (PI4IOE5V9554A on I2C 0x38) — IO0..IO7 bit positions.
+ *  These are channel indices on the expander, not ESP32 GPIOs. Pin polarity (XSMT/SHDN
+ *  active-low, etc.) lives in the drivers, not here. */
+///@{
+#define EXP_DAC_MUTE     (0)   ///< IO0: PCM5242 XSMT (DAC soft mute)
+#define EXP_AMP_SHDN     (1)   ///< IO1: MAX97220 shutdown
+#define EXP_BTN_B        (2)   ///< IO2: button B
+#define EXP_BTN_RIGHT    (3)   ///< IO3: button Right
+#define EXP_BTN_LEFT     (4)   ///< IO4: button Left
+#define EXP_BTN_DOWN     (5)   ///< IO5: button Down
+#define EXP_BTN_UP       (6)   ///< IO6: button Up
+#define EXP_INOKB        (7)   ///< IO7: MAX17260 fuel-gauge INOKB (input)
+///@}
