@@ -10,11 +10,12 @@
 #define REG_MUTE         0x03   /* RQML=D4 (left), RQMR=D0 (right); 0 = un-muted */
 #define REG_VOL_CTRL     0x3C   /* PCTL[1:0] volume-link mode */
 #define REG_VOL_LEFT     0x3D
+#define REG_VOL_RIGHT    0x3E
 #define REG_CLOCK_STATUS 0x5E   /* read-only clock/PLL validity flags (0 = valid) */
 
 #define STANDBY_REQ      0x10   /* RQST */
 #define MUTE_BOTH        0x11   /* RQML | RQMR */
-#define VOL_R_FOLLOWS_L  0x01   /* PCTL=01: right channel tracks the left register */
+#define VOL_INDEPENDENT  0x00   /* PCTL=00: left (0x3D) and right (0x3E) volumes are independent */
 
 /* ----- Manual clock tree for 3-wire I2S, software mode -----
    SCK is tied to GND on our board, so the DAC has no master clock and its clock
@@ -147,7 +148,7 @@ esp_err_t audio_dac_init(i2c_master_bus_handle_t bus)
     err = configure_clock(44100);       /* default rate; retuned per track via _set_sample_rate */
     if (err != ESP_OK) return err;
 
-    return write_reg(REG_VOL_CTRL, VOL_R_FOLLOWS_L);  /* one write drives both channels */
+    return write_reg(REG_VOL_CTRL, VOL_INDEPENDENT);  /* drive left/right separately (L/R balance) */
 }
 
 esp_err_t audio_dac_set_sample_rate(uint32_t rate_hz)
@@ -155,9 +156,11 @@ esp_err_t audio_dac_set_sample_rate(uint32_t rate_hz)
     return configure_clock(rate_hz);
 }
 
-esp_err_t audio_dac_set_volume(uint8_t level)
+esp_err_t audio_dac_set_volume(uint8_t left, uint8_t right)
 {
-    return write_reg(REG_VOL_LEFT, level);   /* right channel follows, see audio_dac_init() */
+    esp_err_t err = write_reg(REG_VOL_LEFT, left);
+    if (err != ESP_OK) return err;
+    return write_reg(REG_VOL_RIGHT, right);
 }
 
 esp_err_t audio_dac_get_volume(uint8_t *level)

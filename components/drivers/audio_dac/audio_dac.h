@@ -20,10 +20,11 @@
  */
 
 /**
- * @brief Attach the PCM5242 to the shared I2C bus and link the right volume to the left.
+ * @brief Attach the PCM5242 to the shared I2C bus and select independent L/R volume.
  *
- * Selects register page 0 and sets the volume-control mode so the right channel tracks
- * the left, letting audio_dac_set_volume() drive both with a single register write.
+ * Selects register page 0 and sets the volume-control mode so the left (0x3D) and right
+ * (0x3E) digital volumes are independent, letting audio_dac_set_volume() apply an L/R
+ * balance. Higher layers compute the per-channel bytes; the driver just writes them.
  *
  * @param bus  Master bus handle from i2c_bus_init().
  * @return ESP_OK on success, or the I2C error (e.g. if the DAC does not ACK).
@@ -48,16 +49,20 @@ esp_err_t audio_dac_init(i2c_master_bus_handle_t bus);
 esp_err_t audio_dac_set_sample_rate(uint32_t rate_hz);
 
 /**
- * @brief Set the digital volume; the right channel follows the left (see audio_dac_init()).
+ * @brief Set the left and right digital volumes independently (see audio_dac_init()).
  *
- * @param level  PCM5242 volume byte: 0x00 = +24 dB, 0x30 = 0 dB, 0xFE = -103 dB,
+ * Pass the same byte for both to keep the channels matched, or different bytes to apply
+ * an L/R balance (e.g. to compensate an analog channel-gain mismatch).
+ *
+ * @param left   Left-channel volume byte: 0x00 = +24 dB, 0x30 = 0 dB, 0xFE = -103 dB,
  *               0xFF = mute (see adc_pot_to_volume()).
+ * @param right  Right-channel volume byte, same scale.
  * @return ESP_OK on success, or the I2C error.
  */
-esp_err_t audio_dac_set_volume(uint8_t level);
+esp_err_t audio_dac_set_volume(uint8_t left, uint8_t right);
 
 /**
- * @brief Read the digital volume byte back (left channel), for verification.
+ * @brief Read the left-channel digital volume byte back, for verification.
  *
  * @param[out] level  Receives the left-channel volume register value.
  * @return ESP_OK on success, or the I2C error.

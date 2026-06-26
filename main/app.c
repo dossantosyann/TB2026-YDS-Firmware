@@ -23,8 +23,10 @@
 /* ===== TEST CODE — bsp bring-up. Probes each bus and shows pass/fail on the OLED.
    Remove this whole block once the real drivers/services own the buses. ===== */
 
-#define GAUGE_TEST 1   /* 1: show the fuel-gauge snapshot instead of the BSP status screen */
-#define MENU_TEST  1   /* 1: show the root menu instead of the bring-up screens */
+#define GAUGE_TEST 0   /* 1: show the fuel-gauge snapshot instead of the BSP status screen */
+#define MENU_TEST  0   /* 1: show the root menu instead of the bring-up screens */
+#define TONE_TEST  1   /* 1: emit a continuous 440 Hz tone on the wired DAC path and stay there
+                          (overrides MENU_TEST/the status loop). Set to 0 for normal boot. */
 
 #define COL_OK   gfx_rgb(0, 220, 0)
 #define COL_FAIL gfx_rgb(220, 0, 0)
@@ -114,6 +116,79 @@ static void render_gauge(const fuel_gauge_data_t *d, esp_err_t rd)
 
     gfx_flush();
 }
+
+#if TONE_TEST
+/* Re-validate the wired output path (I2S clocking + PCM5242 PLL lock + analog mute/amp
+   sequencing) by streaming a continuous 440 Hz sine. Assumes app_init() already ran
+   i2s_bus_init() (s_i2s), audio_dac_init() and gpio_expander_init(). Never returns. */
+#define TONE_FS      44100              /* I2S bus default rate (see i2s_bus_init) */
+#define TONE_FREQ    441                /* 100 samples/period at 44100 -> seamless table loop */
+#define TONE_FRAMES  ((TONE_FS / TONE_FREQ) * 10)  /* 1000 frames = exactly 10 periods */
+#define TONE_VOL_R   0x88               /* right-channel volume byte (~ -20 dB), the louder analog side */
+#define TONE_VOL_L   0x38               /* left boosted ~8 dB (lower byte = louder) to offset the imbalance; tune by ear */
+
+/* Sanity readback: dump the volume-link mode (PCTL, 0x3C) and both channel volume
+   registers (L 0x3D, R 0x3E) straight off the DAC. With independent L/R, PCTL should
+   read 0x00 and both volume bytes should match what audio_dac_set_volume() wrote. Uses a
+   throwaway device handle so it needs nothing from the driver. */
+static void dac_dump_volume_regs(void)
+{
+    const i2c_device_config_t cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address  = ADDR_DAC,
+        .scl_speed_hz    = I2C_BUS_FREQ_HZ,
+    };
+    i2c_master_dev_handle_t dev;
+    if (i2c_master_bus_add_device(s_i2c, &cfg, &dev) != ESP_OK) {
+        ESP_LOGW("tone", "diag: could not add DAC device handle");
+        return;
+    }
+    uint8_t pctl = 0xFF, vl = 0xFF, vr = 0xFF, reg;
+    reg = 0x3C; i2c_master_transmit_receive(dev, &reg, 1, &pctl, 1, 100);
+    reg = 0x3D; i2c_master_transmit_receive(dev, &reg, 1, &vl,   1, 100);
+    reg = 0x3E; i2c_master_transmit_receive(dev, &reg, 1, &vr,   1, 100);
+    ESP_LOGI("tone", "PCTL(0x3C)=0x%02X  VOL_L(0x3D)=0x%02X  VOL_R(0x3E)=0x%02X "
+                     "(PCTL 0x00 = independent L/R)", pctl, vl, vr);
+
+    i2c_master_bus_rm_device(dev);
+}
+
+static void audio_tone_test(void)
+{
+    /* DAC: lock the PLL for the rate, set a moderate digital volume, ensure not standby/muted. */
+    audio_dac_set_sample_rate(TONE_FS);
+    audio_dac_set_volume(TONE_VOL_L, TONE_VOL_R);  /* left boosted to balance the louder right analog channel */
+    audio_dac_standby(false);
+    audio_dac_mute(false);
+
+    /* Precompute one whole number of sine periods ONCE. The LX6 FPU is single-precision
+       only, so double sin() is software-emulated and far too slow to run per sample in the
+       streaming loop (starves the I2S DMA -> choppy audio). Doing it once is fine. */
+    static int16_t buf[TONE_FRAMES * 2];   /* stereo, identical L/R */
+    const int period = TONE_FS / TONE_FREQ;
+    for (int i = 0; i < TONE_FRAMES; i++) {
+        int16_t s = (int16_t)(sin(2.0 * 3.14159265358979 * (i % period) / period) * 10000.0);
+        buf[2 * i]     = s;    /* L */
+        buf[2 * i + 1] = s;    /* R */
+    }
+
+    uint8_t clk = 0xFF;
+    audio_dac_get_clock_status(&clk);
+    ESP_LOGI("tone", "DAC clock status 0x%02X (0x00 = PLL locked + clocks valid)", clk);
+    dac_dump_volume_regs();   /* check whether the right channel is actually linked to the left */
+
+    /* Analog path: un-mute the DAC (XSMT high) first, settle, then bring the amp up last
+       so the turn-on transient stays out of the headphones. */
+    gpio_expander_set(EXP_DAC_MUTE, true);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    gpio_expander_set(EXP_AMP_SHDN, true);
+
+    for (;;) {
+        size_t written;
+        i2s_channel_write(s_i2s, buf, sizeof buf, &written, portMAX_DELAY);  /* loops seamlessly */
+    }
+}
+#endif /* TONE_TEST */
 /* ===== END TEST CODE ===== */
 
 void app_init(void)
@@ -173,6 +248,11 @@ void app_init(void)
 
 void app_run(void)
 {
+#if TONE_TEST
+    /* ===== TEST CODE — tone test takes over the boot; never returns. ===== */
+    audio_tone_test();
+#endif
+
     /* ===== TEST CODE — show the root menu. The display is already up from
        app_init(). The menu is static, so render once and idle (no redraw).
        Set MENU_TEST 0 to fall back to the bring-up screens below. ===== */
@@ -197,7 +277,7 @@ void app_run(void)
         int dac_rd = -1;
         if (s_dac_drv_ok) {
             uint8_t rd;
-            audio_dac_set_volume(vol);
+            audio_dac_set_volume(vol, vol);
             if (audio_dac_get_volume(&rd) == ESP_OK) dac_rd = rd;
         }
 
