@@ -7,7 +7,8 @@
 #include "spi_bus.h"           /* TEST CODE */
 #include "i2c_bus.h"           /* TEST CODE */
 #include "sink_i2s_dac.h"      /* TEST CODE */
-#include "adc.h"               /* TEST CODE */
+#include "pipeline.h"          /* TEST CODE */
+#include "volume.h"            /* TEST CODE */
 #include "audio_dac.h"         /* TEST CODE */
 #include "gpio_expander.h"     /* TEST CODE */
 #include "fuel_gauge.h"        /* TEST CODE */
@@ -23,10 +24,12 @@
 /* ===== TEST CODE — bsp bring-up. Probes each bus and shows pass/fail on the OLED.
    Remove this whole block once the real drivers/services own the buses. ===== */
 
-#define GAUGE_TEST 0   /* 1: show the fuel-gauge snapshot instead of the BSP status screen */
+#define GAUGE_TEST 1   /* 1: show the fuel-gauge snapshot instead of the BSP status screen */
 #define MENU_TEST  0   /* 1: show the root menu instead of the bring-up screens */
-#define TONE_TEST  1   /* 1: emit a continuous 440 Hz tone on the wired DAC path and stay there
+#define TONE_TEST  0   /* 1: emit a continuous 440 Hz tone on the wired DAC path and stay there
                           (overrides MENU_TEST/the status loop). Set to 0 for normal boot. */
+#define PIPELINE_TEST 1 /* 1: route a 440 Hz tone through the audio pipeline task (pinned core 1)
+                          instead of the direct-write tone above. Set TONE_TEST 0 to use this. */
 
 #define COL_OK   gfx_rgb(0, 220, 0)
 #define COL_FAIL gfx_rgb(220, 0, 0)
@@ -37,7 +40,6 @@
 #define ADDR_DAC   0x4C  /* PCM5242 DAC */
 
 static i2c_master_bus_handle_t   s_i2c;
-static adc_oneshot_unit_handle_t s_adc;
 
 static bool s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok, s_exp_drv_ok;
 static bool s_gauge_drv_ok;
@@ -211,8 +213,8 @@ void app_init(void)
     }
 
     s_i2s_ok = sink_i2s_dac_init() == ESP_OK;  /* sink owns the I2S bus; no audio without DAC setup */
-    s_adc_ok = adc_pot_init(&s_adc) == ESP_OK;
     s_dac_drv_ok = (s_i2c != NULL) && audio_dac_init(s_i2c) == ESP_OK;
+    s_adc_ok = volume_init() == ESP_OK;        /* volume service owns the pot + DAC volume (after audio_dac_init) */
     s_exp_drv_ok = (s_i2c != NULL) && gpio_expander_init(s_i2c) == ESP_OK;
     s_gauge_drv_ok = (s_i2c != NULL) && fuel_gauge_init(s_i2c) == ESP_OK;
 
@@ -243,6 +245,14 @@ void app_init(void)
 
 void app_run(void)
 {
+#if PIPELINE_TEST
+    /* ===== TEST CODE — kick off the tone, then fall through. Unlike audio_tone_test(),
+       pipeline_play_tone() returns immediately: playback runs in the pinned audio task,
+       so app_run continues to the status/gauge loop below and the screen stays alive. ===== */
+    ESP_ERROR_CHECK(pipeline_init());   /* sink_i2s_dac_init() already ran in app_init() */
+    ESP_ERROR_CHECK(pipeline_play_tone(440));
+#endif
+
 #if TONE_TEST
     /* ===== TEST CODE — tone test takes over the boot; never returns. ===== */
     audio_tone_test();
@@ -264,15 +274,13 @@ void app_run(void)
     for (;;) {
         int mv = 0;
         uint8_t vol = 0;
-        if (s_adc_ok && adc_pot_read(s_adc, &mv) == ESP_OK) {
-            vol = adc_pot_to_volume(mv);
-        }
+        volume_poll(&mv, &vol);   /* sole DAC-volume writer; writes I2C only when the knob moves */
 
-        /* Push the pot volume to the DAC over I2C and read it back to confirm the link. */
+        /* Read the DAC volume back over I2C to confirm the link (read-only; the volume
+           service owns every write). */
         int dac_rd = -1;
         if (s_dac_drv_ok) {
             uint8_t rd;
-            audio_dac_set_volume(vol, vol);
             if (audio_dac_get_volume(&rd) == ESP_OK) dac_rd = rd;
         }
 
