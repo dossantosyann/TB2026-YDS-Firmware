@@ -16,6 +16,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include "audio_sink.h"
 #include <stdint.h>
 
 /**
@@ -36,7 +37,18 @@
 esp_err_t pipeline_init(void);
 
 /**
- * @brief Bring-up/diagnostic: stream a continuous sine to the wired sink.
+ * @brief Select the output backend used by the next playback.
+ *
+ * Defaults to the wired DAC (set in pipeline_init). Pass sink_bluetooth_get() to route audio
+ * to a connected speaker, or sink_i2s_dac_get() for the jack. Takes effect on the next
+ * playback; changing it mid-playback does not interrupt the current tone.
+ *
+ * @param sink  Sink vtable to use; ignored if NULL.
+ */
+void pipeline_set_sink(const audio_sink_t *sink);
+
+/**
+ * @brief Bring-up/diagnostic: stream a continuous sine to the current sink.
  *
  * Plays until pipeline_stop(). Not part of normal playback; it validates the real-time
  * path (task scheduling, buffering, sink start/write/stop sequencing) with a synthetic

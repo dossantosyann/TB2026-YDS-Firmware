@@ -4,15 +4,17 @@
  *
  * Owns the Bluedroid stack and the A2DP source role: it powers the radio up, advertises an
  * SBC stream endpoint, discovers nearby devices and connects to one matched by name. It stays
- * audio-agnostic — it does not encode or push PCM. The @ref services_audio_sink Bluetooth
- * backend (sink_bluetooth) layers the SBC encoding and the audio data path on top of an
- * established connection.
+ * codec-agnostic: it does not encode audio. SBC encoding and link pacing are done by the stack,
+ * which pulls raw PCM from a callback the caller registers via bluetooth_audio_start(); the
+ * @ref services_audio_sink Bluetooth backend (sink_bluetooth) supplies that PCM from the
+ * pipeline.
  *
  * The controller is configured BR/EDR-only (see sdkconfig.defaults); BLE is off.
  */
 #pragma once
 
 #include "esp_err.h"
+#include "esp_a2dp_api.h"   /* esp_a2d_source_data_cb_t for the audio data path */
 #include <stdbool.h>
 
 /**
@@ -61,5 +63,26 @@ esp_err_t bluetooth_disconnect(void);
  * @return true if connected to a sink device, false otherwise.
  */
 bool bluetooth_is_connected(void);
+
+/**
+ * @brief Start streaming PCM to the connected sink through the A2DP source data path.
+ *
+ * Registers @p pcm_cb and kicks the media-control handshake (CHECK_SRC_RDY -> START). The
+ * stack pulls PCM from @p pcm_cb in its own task and encodes SBC itself; this service stays
+ * codec-agnostic and only wires the opaque PCM callback to the link. Requires an established
+ * connection.
+ *
+ * @param pcm_cb  Pull callback supplying interleaved 16-bit PCM at the negotiated rate.
+ * @return ESP_OK if the start was issued; ESP_ERR_INVALID_STATE if not connected;
+ *         ESP_ERR_INVALID_ARG if @p pcm_cb is NULL; otherwise the A2DP error.
+ */
+esp_err_t bluetooth_audio_start(esp_a2d_source_data_cb_t pcm_cb);
+
+/**
+ * @brief Suspend the media stream started by bluetooth_audio_start().
+ *
+ * @return ESP_OK if the suspend was issued, otherwise the A2DP error.
+ */
+esp_err_t bluetooth_audio_stop(void);
 
 /** @} */

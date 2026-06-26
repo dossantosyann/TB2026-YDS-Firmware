@@ -1,6 +1,7 @@
 /**
  * @file pipeline.c
- * @brief Audio pipeline task: producer->consumer loop from a PCM source to the wired sink.
+ * @brief Audio pipeline task: producer->consumer loop from a PCM source to a selectable sink
+ *        (wired DAC or Bluetooth).
  * @ingroup services_audio_pipeline
  */
 #include "pipeline.h"
@@ -36,6 +37,7 @@ typedef struct {
 
 static QueueHandle_t s_cmd_q;
 static int16_t       s_chunk[PIPE_CHUNK_FRAMES * 2];   /* interleaved stereo write buffer */
+static const audio_sink_t *s_sink;                     /* output backend; defaults to the wired DAC */
 
 /* Stream a sine until a CMD_STOP arrives. One period is precomputed once: the LX6 FPU is
    single-precision, so a per-sample double sin() would be software-emulated and starve the
@@ -53,7 +55,7 @@ static void run_tone(uint32_t freq_hz)
         table[i] = (int16_t)(sin(2.0 * 3.14159265358979 * i / period) * TONE_AMPLITUDE);
     }
 
-    const audio_sink_t *sink = sink_i2s_dac_get();
+    const audio_sink_t *sink = s_sink;
     esp_err_t err = sink->start(PIPE_FS, 16, 2);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "tone: sink start failed (%s)", esp_err_to_name(err));
@@ -99,6 +101,8 @@ esp_err_t pipeline_init(void)
 {
     if (s_cmd_q) return ESP_OK;        /* idempotent */
 
+    s_sink = sink_i2s_dac_get();       /* default output; pipeline_set_sink() can switch it */
+
     s_cmd_q = xQueueCreate(4, sizeof(pipe_cmd_t));
     if (!s_cmd_q) return ESP_ERR_NO_MEM;
 
@@ -110,6 +114,11 @@ esp_err_t pipeline_init(void)
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
+}
+
+void pipeline_set_sink(const audio_sink_t *sink)
+{
+    if (sink) s_sink = sink;
 }
 
 esp_err_t pipeline_play_tone(uint32_t freq_hz)

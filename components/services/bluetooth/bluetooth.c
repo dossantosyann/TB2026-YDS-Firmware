@@ -128,6 +128,11 @@ static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
     case ESP_A2D_MEDIA_CTRL_ACK_EVT:
         ESP_LOGI(TAG, "media ctrl %d ack %d",
                  param->media_ctrl_stat.cmd, param->media_ctrl_stat.status);
+        /* Two-step source start: once the stack confirms it is ready, open the media channel. */
+        if (param->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY &&
+            param->media_ctrl_stat.status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
+            esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_START);
+        }
         break;
     case ESP_A2D_PROF_STATE_EVT:
         ESP_LOGI(TAG, "A2DP profile %s",
@@ -213,4 +218,20 @@ esp_err_t bluetooth_disconnect(void)
 bool bluetooth_is_connected(void)
 {
     return s_connected;
+}
+
+esp_err_t bluetooth_audio_start(esp_a2d_source_data_cb_t pcm_cb)
+{
+    if (!s_connected) return ESP_ERR_INVALID_STATE;
+    if (!pcm_cb) return ESP_ERR_INVALID_ARG;
+
+    esp_err_t err = esp_a2d_source_register_data_callback(pcm_cb);
+    if (err != ESP_OK) return err;
+    /* CHECK_SRC_RDY is acked in a2d_cb, which then issues START. */
+    return esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_CHECK_SRC_RDY);
+}
+
+esp_err_t bluetooth_audio_stop(void)
+{
+    return esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
 }
