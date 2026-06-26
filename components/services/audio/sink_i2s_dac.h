@@ -10,6 +10,26 @@
 
 #include "esp_err.h"
 #include <stdbool.h>
+#include "audio_sink.h"
+
+/**
+ * @brief Bring up the wired path's I2S bus; the sink owns the channel handle.
+ *
+ * Mounts I2S0 (BCK/WS/DOUT, no MCLK) and keeps the TX handle inside the sink, so upper
+ * layers never touch it. Call once at startup. The PCM5242 I2C control port and the
+ * expander mute/amp lines are initialised by their own drivers (audio_dac_init,
+ * gpio_expander_init), not here.
+ *
+ * @return ESP_OK on success, or the I2S driver error.
+ */
+esp_err_t sink_i2s_dac_init(void);
+
+/**
+ * @brief Get the wired-DAC sink (I2S → PCM5242 → MAX97220 → jack).
+ *
+ * @return Pointer to the static sink vtable (never NULL). Requires sink_i2s_dac_init().
+ */
+const audio_sink_t *sink_i2s_dac_get(void);
 
 /**
  * @brief Enable or mute the DAC analog output via the PCM5242 XSMT pin.

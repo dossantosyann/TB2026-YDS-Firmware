@@ -6,7 +6,7 @@
 #include "gfx.h"               /* TEST CODE */
 #include "spi_bus.h"           /* TEST CODE */
 #include "i2c_bus.h"           /* TEST CODE */
-#include "i2s_bus.h"           /* TEST CODE */
+#include "sink_i2s_dac.h"      /* TEST CODE */
 #include "adc.h"               /* TEST CODE */
 #include "audio_dac.h"         /* TEST CODE */
 #include "gpio_expander.h"     /* TEST CODE */
@@ -38,7 +38,6 @@
 
 static i2c_master_bus_handle_t   s_i2c;
 static adc_oneshot_unit_handle_t s_adc;
-static i2s_chan_handle_t         s_i2s;
 
 static bool s_gauge_ok, s_exp_ok, s_dac_ok, s_i2s_ok, s_adc_ok, s_dac_drv_ok, s_exp_drv_ok;
 static bool s_gauge_drv_ok;
@@ -119,13 +118,14 @@ static void render_gauge(const fuel_gauge_data_t *d, esp_err_t rd)
 
 #if TONE_TEST
 /* Re-validate the wired output path (I2S clocking + PCM5242 PLL lock + analog mute/amp
-   sequencing) by streaming a continuous 440 Hz sine. Assumes app_init() already ran
-   i2s_bus_init() (s_i2s), audio_dac_init() and gpio_expander_init(). Never returns. */
+   sequencing) by streaming a continuous 440 Hz sine through the audio_sink_t. Assumes
+   app_init() already ran sink_i2s_dac_init(), audio_dac_init() and gpio_expander_init().
+   Never returns. */
 #define TONE_FS      44100              /* I2S bus default rate (see i2s_bus_init) */
 #define TONE_FREQ    441                /* 100 samples/period at 44100 -> seamless table loop */
 #define TONE_FRAMES  ((TONE_FS / TONE_FREQ) * 10)  /* 1000 frames = exactly 10 periods */
-#define TONE_VOL_R   0x88               /* right-channel volume byte (~ -20 dB), the louder analog side */
-#define TONE_VOL_L   0x38               /* left boosted ~8 dB (lower byte = louder) to offset the imbalance; tune by ear */
+#define TONE_VOL_R   0x68               /* right-channel volume byte (~ -20 dB), the louder analog side */
+#define TONE_VOL_L   0x48               /* left boosted ~8 dB (lower byte = louder) to offset the imbalance; tune by ear */
 
 /* Sanity readback: dump the volume-link mode (PCTL, 0x3C) and both channel volume
    registers (L 0x3D, R 0x3E) straight off the DAC. With independent L/R, PCTL should
@@ -155,11 +155,12 @@ static void dac_dump_volume_regs(void)
 
 static void audio_tone_test(void)
 {
-    /* DAC: lock the PLL for the rate, set a moderate digital volume, ensure not standby/muted. */
-    audio_dac_set_sample_rate(TONE_FS);
-    audio_dac_set_volume(TONE_VOL_L, TONE_VOL_R);  /* left boosted to balance the louder right analog channel */
-    audio_dac_standby(false);
-    audio_dac_mute(false);
+    const audio_sink_t *sink = sink_i2s_dac_get();
+
+    /* Bring the wired path up through the sink: I2S rate + DAC PLL lock + standby/mute off
+       + pop-free XSMT-then-amp sequencing all live in i2s_start() now. */
+    sink->start(TONE_FS, 16, 2);
+    sink->set_volume(TONE_VOL_L, TONE_VOL_R);  /* left boosted to balance the louder right analog channel */
 
     /* Precompute one whole number of sine periods ONCE. The LX6 FPU is single-precision
        only, so double sin() is software-emulated and far too slow to run per sample in the
@@ -174,18 +175,12 @@ static void audio_tone_test(void)
 
     uint8_t clk = 0xFF;
     audio_dac_get_clock_status(&clk);
-    ESP_LOGI("tone", "DAC clock status 0x%02X (0x00 = PLL locked + clocks valid)", clk);
-    dac_dump_volume_regs();   /* check whether the right channel is actually linked to the left */
-
-    /* Analog path: un-mute the DAC (XSMT high) first, settle, then bring the amp up last
-       so the turn-on transient stays out of the headphones. */
-    gpio_expander_set(EXP_DAC_MUTE, true);
-    vTaskDelay(pdMS_TO_TICKS(20));
-    gpio_expander_set(EXP_AMP_SHDN, true);
+    ESP_LOGI("tone", "DAC clock status 0x%02X (0x40 = PLL locked, SCK grounded by design)", clk);
+    dac_dump_volume_regs();   /* confirm the independent L/R volume bytes */
 
     for (;;) {
         size_t written;
-        i2s_channel_write(s_i2s, buf, sizeof buf, &written, portMAX_DELAY);  /* loops seamlessly */
+        sink->write(buf, sizeof buf, &written);  /* loops seamlessly */
     }
 }
 #endif /* TONE_TEST */
@@ -215,7 +210,7 @@ void app_init(void)
         s_dac_ok   = i2c_master_probe(s_i2c, ADDR_DAC,   50) == ESP_OK;
     }
 
-    s_i2s_ok = i2s_bus_init(&s_i2s) == ESP_OK;  /* bus mounts; no audio without DAC setup */
+    s_i2s_ok = sink_i2s_dac_init() == ESP_OK;  /* sink owns the I2S bus; no audio without DAC setup */
     s_adc_ok = adc_pot_init(&s_adc) == ESP_OK;
     s_dac_drv_ok = (s_i2c != NULL) && audio_dac_init(s_i2c) == ESP_OK;
     s_exp_drv_ok = (s_i2c != NULL) && gpio_expander_init(s_i2c) == ESP_OK;
