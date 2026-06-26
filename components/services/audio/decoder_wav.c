@@ -58,7 +58,14 @@ static esp_err_t wav_open(FILE *f, decoder_format_t *fmt)
             rate     = le32(b + 4);
             bits     = (uint16_t)(b[14] | b[15] << 8);
             have_fmt = true;
-            fseek(f, (long)(csize - 16) + (csize & 1), SEEK_CUR);  /* skip ext + pad byte */
+            if (fmt_tag == 0xFFFE) {     /* WAVE_FORMAT_EXTENSIBLE: real format is in the GUID */
+                uint8_t ext[24];         /* cbSize + valid bits + channel mask + 16-byte GUID */
+                if (csize < 40 || fread(ext, 1, 24, f) != 24) return ESP_FAIL;
+                if (ext[8] == 0x01 && ext[9] == 0x00) fmt_tag = 1;   /* sub-format is PCM */
+                fseek(f, (long)(csize - 40) + (csize & 1), SEEK_CUR);
+            } else {
+                fseek(f, (long)(csize - 16) + (csize & 1), SEEK_CUR);  /* skip ext + pad byte */
+            }
         } else if (!memcmp(ck, "data", 4)) {
             if (!have_fmt) return ESP_FAIL;
             s_data_remaining = csize;

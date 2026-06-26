@@ -76,8 +76,8 @@ static esp_err_t mp3_open(FILE *f, decoder_format_t *fmt)
 
 static esp_err_t mp3_read(void *pcm, size_t cap_bytes, size_t *got_bytes)
 {
-    (void)cap_bytes;        /* caller guarantees >= DECODER_READ_BUF_BYTES */
     *got_bytes = 0;
+    if (cap_bytes < DECODER_READ_BUF_BYTES) return ESP_ERR_INVALID_SIZE;  /* one frame may not fit */
     if (!s_dec) return ESP_ERR_INVALID_STATE;
     short *out = (short *)pcm;
 

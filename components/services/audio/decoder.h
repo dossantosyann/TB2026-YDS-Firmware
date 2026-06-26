@@ -72,7 +72,9 @@ esp_err_t decoder_format(decoder_format_t *fmt);
  * @param pcm        Output buffer; must be at least @ref DECODER_READ_BUF_BYTES.
  * @param cap_bytes  Capacity of @p pcm in bytes.
  * @param got_bytes  Receives the number of bytes written; 0 means end of file.
- * @return ESP_OK; ESP_ERR_INVALID_STATE if no stream is open; ESP_FAIL on decode error.
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if no stream is open;
+ *         ESP_ERR_INVALID_SIZE if @p cap_bytes is below @ref DECODER_READ_BUF_BYTES;
+ *         ESP_FAIL on decode error.
  */
 esp_err_t decoder_read(void *pcm, size_t cap_bytes, size_t *got_bytes);
 
