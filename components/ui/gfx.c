@@ -1,7 +1,11 @@
 #include "gfx.h"
 #include "display_oled.h"
+#include "esp_attr.h"
 
-static gfx_color_t s_fb[GFX_W * GFX_H];
+/* 62 KB framebuffer lives in PSRAM (EXT_RAM_BSS_ATTR) to keep internal DRAM free for the
+   Bluetooth stack. The SPI flush reads it pixel-by-pixel on the CPU and DMAs from an internal
+   line buffer, so PSRAM here costs only slower CPU access, never a DMA-from-PSRAM issue. */
+EXT_RAM_BSS_ATTR static gfx_color_t s_fb[GFX_W * GFX_H];
 
 const gfx_color_t *gfx_buffer(void)
 {

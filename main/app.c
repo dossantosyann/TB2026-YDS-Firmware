@@ -9,6 +9,7 @@
 #include "sink_i2s_dac.h"      /* TEST CODE */
 #include "pipeline.h"          /* TEST CODE */
 #include "volume.h"            /* TEST CODE */
+#include "bluetooth.h"         /* TEST CODE */
 #include "audio_dac.h"         /* TEST CODE */
 #include "gpio_expander.h"     /* TEST CODE */
 #include "fuel_gauge.h"        /* TEST CODE */
@@ -24,12 +25,15 @@
 /* ===== TEST CODE — bsp bring-up. Probes each bus and shows pass/fail on the OLED.
    Remove this whole block once the real drivers/services own the buses. ===== */
 
-#define GAUGE_TEST 1   /* 1: show the fuel-gauge snapshot instead of the BSP status screen */
+#define GAUGE_TEST 0   /* 1: show the fuel-gauge snapshot instead of the BSP status screen */
 #define MENU_TEST  0   /* 1: show the root menu instead of the bring-up screens */
 #define TONE_TEST  0   /* 1: emit a continuous 440 Hz tone on the wired DAC path and stay there
                           (overrides MENU_TEST/the status loop). Set to 0 for normal boot. */
-#define PIPELINE_TEST 1 /* 1: route a 440 Hz tone through the audio pipeline task (pinned core 1)
+#define PIPELINE_TEST 0 /* 1: route a 440 Hz tone through the audio pipeline task (pinned core 1)
                           instead of the direct-write tone above. Set TONE_TEST 0 to use this. */
+#define BT_TEST    0   /* 1: bring up Bluetooth and connect to a speaker by name (connection
+                          test only, no streaming yet). 0 compiles the radio out entirely
+                          (linker drops the bluetooth component -> no power drawn). */
 
 #define COL_OK   gfx_rgb(0, 220, 0)
 #define COL_FAIL gfx_rgb(220, 0, 0)
@@ -251,6 +255,16 @@ void app_run(void)
        so app_run continues to the status/gauge loop below and the screen stays alive. ===== */
     ESP_ERROR_CHECK(pipeline_init());   /* sink_i2s_dac_init() already ran in app_init() */
     ESP_ERROR_CHECK(pipeline_play_tone(440));
+#endif
+
+#if BT_TEST
+    /* ===== TEST CODE — connection-only Bluetooth test. bluetooth_connect_by_name() returns
+       immediately (the inquiry + connect run on the BT task), so app_run falls through to the
+       status loop and the screen stays alive. Put the speaker in pairing mode, then watch the
+       console for "found ... connecting" and "A2DP connected (audio MTU ...)". No audio is
+       streamed yet — that is sink_bluetooth's job. ===== */
+    ESP_ERROR_CHECK(bluetooth_init());
+    ESP_ERROR_CHECK(bluetooth_connect_by_name("JBL Charge 5"));
 #endif
 
 #if TONE_TEST
