@@ -1,20 +1,30 @@
 /**
  * @file volume.h
- * @brief Volume service: the sole writer of the PCM5242 digital volume.
+ * @brief Volume service: maps the pot to whichever output is active (DAC, Bluetooth, or none).
  *
- * Owns the volume potentiometer (ADC1, see @ref bsp_adc) and is the only place that calls
- * audio_dac_set_volume(). It samples the knob, maps it to a DAC register byte and writes
- * the DAC only when that byte changes, so a still knob costs no I2C traffic. The driver was
- * made independent L/R on purpose; this service applies an optional balance trim on top of
- * the knob level to even out the analog L/R mismatch downstream of the DAC.
+ * Owns the volume potentiometer (ADC1, see @ref bsp_adc) and routes the knob level to the
+ * selected output: the PCM5242 digital volume (with an L/R balance trim), the Bluetooth speaker
+ * over AVRCP, or nowhere. It only writes when the mapped level changes, so a still knob costs no
+ * I2C/AVRCP traffic, and it only ever touches the active output (power: no pointless writes to a
+ * silent path). Each output has its own scale: the DAC uses a dB register byte, Bluetooth a
+ * linear 0..0x7F (see @ref bsp_adc); switching output re-applies the current knob position.
  *
- * Not real-time: drive it from a periodic maintenance/UI loop via volume_poll(), not its own
- * task. The Bluetooth/AVRCP path will feed the same service once it lands.
+ * The Bluetooth setter is registered as a callback (volume_set_bt_handler) so this service does
+ * not hard-link the Bluetooth stack when BT is unused.
+ *
+ * Not real-time: drive it from a periodic maintenance/UI loop via volume_poll(), not its own task.
  */
 #pragma once
 
 #include "esp_err.h"
 #include <stdint.h>
+
+/** @brief Where volume_poll() sends the knob level. */
+typedef enum {
+    VOLUME_OUT_NONE = 0,  /**< No active output: sample the pot but send nothing. */
+    VOLUME_OUT_DAC,       /**< Wired jack via the PCM5242 digital volume (default). */
+    VOLUME_OUT_BT,        /**< Bluetooth speaker via AVRCP absolute volume. */
+} volume_output_t;
 
 /**
  * @defgroup services_audio_volume Volume service
@@ -40,10 +50,31 @@ esp_err_t volume_init(void);
  * call (cheap); the I2C write is skipped when the level is unchanged (deadband).
  *
  * @param[out] out_mv     Optional: wiper voltage in millivolts (for display). May be NULL.
- * @param[out] out_level  Optional: applied left-channel volume byte (for display). May be NULL.
- * @return true if a new level was written to the DAC this call, false otherwise.
+ * @param[out] out_level  Optional: the level applied to the active output (DAC byte or AVRCP
+ *                        value, per the current output). May be NULL.
+ * @return true if a new level was sent to the active output this call, false otherwise.
  */
 bool volume_poll(int *out_mv, uint8_t *out_level);
+
+/**
+ * @brief Select which output volume_poll() drives. Default VOLUME_OUT_DAC.
+ *
+ * Switching re-applies the current knob position to the new output on the next poll.
+ * VOLUME_OUT_BT requires a handler registered via volume_set_bt_handler().
+ *
+ * @param out  The output to drive.
+ */
+void volume_set_output(volume_output_t out);
+
+/**
+ * @brief Register the Bluetooth absolute-volume setter (e.g. bluetooth_set_absolute_volume).
+ *
+ * Indirection so the volume service does not hard-link the Bluetooth stack when BT is unused.
+ * The callback takes an AVRCP absolute volume (0..0x7F). Pass NULL to clear.
+ *
+ * @param set_abs_vol  The setter, or NULL.
+ */
+void volume_set_bt_handler(esp_err_t (*set_abs_vol)(uint8_t volume));
 
 /**
  * @brief Trim the L/R balance to compensate the analog imbalance (driver is independent L/R).

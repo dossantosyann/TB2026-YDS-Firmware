@@ -9,6 +9,7 @@
 #include "esp_bt_main.h"
 #include "esp_gap_bt_api.h"
 #include "esp_a2dp_api.h"
+#include "esp_avrc_api.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 
@@ -26,6 +27,18 @@ static esp_bd_addr_t      s_peer_bda;
 static bool               s_connected;
 static esp_a2d_conn_hdl_t s_conn_hdl;    /* valid while s_connected; consumed by the BT sink */
 static uint16_t           s_audio_mtu;   /* negotiated audio MTU; caps the encoded send size */
+static bool               s_avrc_connected; /* AVRCP control channel up (separate from A2DP) */
+static uint8_t            s_avrc_vol;       /* last requested absolute volume, 0..0x7F */
+static bool              s_avrc_have_vol;   /* a volume was requested at least once */
+static volatile bool     s_vol_acked;       /* the most recent set was confirmed by the sink */
+
+/* Rolling AVRCP transaction label (0..15); consecutive commands should use different values. */
+static uint8_t next_tl(void)
+{
+    static uint8_t tl;
+    tl = (tl + 1) & ESP_AVRC_TRANS_LABEL_MAX;
+    return tl;
+}
 
 /* Pull the advertised device name out of an inquiry result: the explicit BDNAME property if
    present, otherwise the complete/short local name carried in the EIR. */
@@ -147,6 +160,34 @@ static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
     }
 }
 
+/* AVRCP controller role: we send commands to the speaker (set its absolute volume). We do not
+   subscribe to its volume-change notifications on purpose: the volume potentiometer is the
+   master, so mirroring the speaker's local changes would fight the knob. */
+static void avrc_ct_cb(esp_avrc_ct_cb_event_t event, esp_avrc_ct_cb_param_t *param)
+{
+    switch (event) {
+    case ESP_AVRC_CT_CONNECTION_STATE_EVT:
+        s_avrc_connected = param->conn_stat.connected;
+        ESP_LOGI(TAG, "AVRCP %s", s_avrc_connected ? "connected" : "disconnected");
+        /* AVRCP comes up a few seconds after A2DP, so a volume set before then was deferred.
+           Apply it now, otherwise the speaker plays at its own (often loud) default. */
+        if (s_avrc_connected && s_avrc_have_vol) {
+            esp_avrc_ct_send_set_absolute_volume_cmd(next_tl(), s_avrc_vol);
+        }
+        break;
+    case ESP_AVRC_CT_SET_ABSOLUTE_VOLUME_RSP_EVT:
+        s_vol_acked = true;
+        ESP_LOGI(TAG, "AVRCP volume acked: %u/127", param->set_volume_rsp.volume);
+        break;
+    case ESP_AVRC_CT_PROF_STATE_EVT:
+        ESP_LOGI(TAG, "AVRCP CT %s",
+                 param->avrc_ct_init_stat.state == ESP_AVRC_INIT_SUCCESS ? "init" : "deinit");
+        break;
+    default:
+        break;
+    }
+}
+
 esp_err_t bluetooth_init(void)
 {
     if (s_inited) return ESP_OK;
@@ -173,6 +214,10 @@ esp_err_t bluetooth_init(void)
     /* No display, no keyboard: just-works Secure Simple Pairing. */
     esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_NONE;
     esp_bt_gap_set_security_param(ESP_BT_SP_IOCAP_MODE, &iocap, sizeof iocap);
+
+    /* AVRCP must be initialised before A2DP (Bluedroid requirement, see esp_avrc_ct_init docs). */
+    if ((err = esp_avrc_ct_init()) != ESP_OK) return err;
+    esp_avrc_ct_register_callback(avrc_ct_cb);
 
     esp_a2d_register_callback(a2d_cb);
     if ((err = esp_a2d_source_init()) != ESP_OK) return err;
@@ -234,4 +279,25 @@ esp_err_t bluetooth_audio_start(esp_a2d_source_data_cb_t pcm_cb)
 esp_err_t bluetooth_audio_stop(void)
 {
     return esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
+}
+
+esp_err_t bluetooth_set_absolute_volume(uint8_t volume)
+{
+    if (volume > 0x7F) volume = 0x7F;
+    s_avrc_vol = volume;
+    s_avrc_have_vol = true;
+    /* Defer if AVRCP is not up yet; avrc_ct_cb re-applies s_avrc_vol on connection. */
+    if (!s_avrc_connected) return ESP_OK;
+    s_vol_acked = false;   /* cleared until the sink confirms this set (see bluetooth_volume_acked) */
+    return esp_avrc_ct_send_set_absolute_volume_cmd(next_tl(), volume);
+}
+
+bool bluetooth_is_avrc_connected(void)
+{
+    return s_avrc_connected;
+}
+
+bool bluetooth_volume_acked(void)
+{
+    return s_vol_acked;
 }

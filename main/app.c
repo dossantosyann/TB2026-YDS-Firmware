@@ -7,6 +7,7 @@
 #include "spi_bus.h"           /* TEST CODE */
 #include "i2c_bus.h"           /* TEST CODE */
 #include "sink_i2s_dac.h"      /* TEST CODE */
+#include "sink_bluetooth.h"    /* TEST CODE */
 #include "pipeline.h"          /* TEST CODE */
 #include "volume.h"            /* TEST CODE */
 #include "bluetooth.h"         /* TEST CODE */
@@ -29,11 +30,14 @@
 #define MENU_TEST  0   /* 1: show the root menu instead of the bring-up screens */
 #define TONE_TEST  0   /* 1: emit a continuous 440 Hz tone on the wired DAC path and stay there
                           (overrides MENU_TEST/the status loop). Set to 0 for normal boot. */
-#define PIPELINE_TEST 0 /* 1: route a 440 Hz tone through the audio pipeline task (pinned core 1)
+#define PIPELINE_TEST 1 /* 1: route a 440 Hz tone through the audio pipeline task (pinned core 1)
                           instead of the direct-write tone above. Set TONE_TEST 0 to use this. */
 #define BT_TEST    0   /* 1: bring up Bluetooth and connect to a speaker by name (connection
                           test only, no streaming yet). 0 compiles the radio out entirely
                           (linker drops the bluetooth component -> no power drawn). */
+#define BT_AUDIO_TEST 0 /* 1: connect to the speaker, then stream a 440 Hz tone to it through the
+                          BT sink (validates the A2DP audio path + AVRCP volume). Set BT_TEST 0
+                          when using this; it does its own connect. */
 
 #define COL_OK   gfx_rgb(0, 220, 0)
 #define COL_FAIL gfx_rgb(220, 0, 0)
@@ -267,6 +271,49 @@ void app_run(void)
     ESP_ERROR_CHECK(bluetooth_connect_by_name("JBL Charge 5"));
 #endif
 
+#if BT_AUDIO_TEST
+    /* ===== TEST CODE — stream the diagnostic tone to the speaker over A2DP. Connect runs
+       async on the BT task, so wait for the link before starting the pipeline (the BT sink's
+       start() needs a live connection). pipeline_play_tone() then returns immediately (pinned
+       audio task), so app_run falls through to the status loop and the screen stays alive.
+       Listen for a clean 440 Hz tone from the speaker. ===== */
+    ESP_ERROR_CHECK(bluetooth_init());
+    ESP_ERROR_CHECK(bluetooth_connect_by_name("JBL Charge 5"));
+
+    /* Wait for AVRCP, not just A2DP: it comes up a few seconds later, and streaming before we
+       can set the volume means the speaker plays at its own (loud) default. AVRCP implies the
+       A2DP link is already up. */
+    for (int i = 0; i < 250 && !bluetooth_is_avrc_connected(); i++) {
+        vTaskDelay(pdMS_TO_TICKS(100));   /* up to 25 s for inquiry + A2DP + AVRCP */
+    }
+    if (!bluetooth_is_avrc_connected()) {
+        ESP_LOGE("bt_audio", "no AVRCP channel; tone test aborted (volume not controllable)");
+    } else {
+        /* Route the volume service to the speaker (the status loop's volume_poll() then tracks
+           the knob live over AVRCP). EAR SAFETY: push the knob level now and WAIT for the speaker
+           to CONFIRM before streaming a single sample. Knob at minimum maps to 0 (silent), so a
+           fresh boot with the knob down starts silent. If the speaker never confirms, do not
+           stream at all. */
+        volume_set_bt_handler(bluetooth_set_absolute_volume);
+        volume_set_output(VOLUME_OUT_BT);
+        volume_poll(NULL, NULL);              /* send the current knob volume to the speaker now */
+
+        bool acked = false;
+        for (int i = 0; i < 50; i++) {        /* up to 5 s for the speaker to confirm the volume */
+            if (bluetooth_volume_acked()) { acked = true; break; }
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        if (!acked) {
+            ESP_LOGE("bt_audio", "speaker did not confirm volume; NOT streaming (ear safety)");
+        } else {
+            ESP_ERROR_CHECK(pipeline_init());
+            pipeline_set_sink(sink_bluetooth_get());
+            ESP_ERROR_CHECK(pipeline_play_tone(440));
+            ESP_LOGI("bt_audio", "streaming 440 Hz tone to the speaker");
+        }
+    }
+#endif
+
 #if TONE_TEST
     /* ===== TEST CODE — tone test takes over the boot; never returns. ===== */
     audio_tone_test();
@@ -288,7 +335,7 @@ void app_run(void)
     for (;;) {
         int mv = 0;
         uint8_t vol = 0;
-        volume_poll(&mv, &vol);   /* sole DAC-volume writer; writes I2C only when the knob moves */
+        volume_poll(&mv, &vol);   /* drives the active output (DAC or BT); sends only on knob change */
 
         /* Read the DAC volume back over I2C to confirm the link (read-only; the volume
            service owns every write). */

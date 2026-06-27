@@ -85,4 +85,38 @@ esp_err_t bluetooth_audio_start(esp_a2d_source_data_cb_t pcm_cb);
  */
 esp_err_t bluetooth_audio_stop(void);
 
+/**
+ * @brief Set the connected speaker's absolute volume over AVRCP (controller role).
+ *
+ * Sends an AVRCP SetAbsoluteVolume to the sink. The AVRCP control channel comes up a few
+ * seconds after the A2DP connection, so a call made before then is remembered and applied
+ * automatically once AVRCP connects. The speaker applies and renders the level itself; this
+ * does not attenuate the PCM stream.
+ *
+ * @param volume  Target volume, 0 (silent) to 0x7F (loudest); values above 0x7F are clamped.
+ * @return ESP_OK if the command was issued or deferred; otherwise the AVRCP error.
+ */
+esp_err_t bluetooth_set_absolute_volume(uint8_t volume);
+
+/**
+ * @brief Report whether the AVRCP control channel is established.
+ *
+ * AVRCP connects a few seconds after the A2DP link. Useful before streaming if you want the
+ * volume controllable from the first sample (otherwise the speaker starts at its own default).
+ *
+ * @return true if AVRCP is connected, false otherwise.
+ */
+bool bluetooth_is_avrc_connected(void);
+
+/**
+ * @brief Report whether the speaker has confirmed the most recent absolute-volume set.
+ *
+ * Cleared when bluetooth_set_absolute_volume() sends a command, set when the sink's
+ * SetAbsoluteVolume response arrives. Poll this before streaming the first sample so the
+ * speaker is known to be at the intended (e.g. silent) level — never blast the user's ears.
+ *
+ * @return true once the sink has acknowledged the last volume set.
+ */
+bool bluetooth_volume_acked(void);
+
 /** @} */

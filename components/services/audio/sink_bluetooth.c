@@ -66,7 +66,12 @@ static esp_err_t bt_stop(void)
 
 static esp_err_t bt_set_volume(uint8_t left, uint8_t right)
 {
-    (void)left; (void)right;   /* TODO: AVRCP absolute volume; loudness is the speaker's job */
+    /* No-op on purpose. The speaker renders volume itself, set over AVRCP via
+       bluetooth_set_absolute_volume() and driven by the pot. The pipeline's per-channel level is
+       a DAC-domain (PCM attenuation) value; forwarding it here would override the safe,
+       pot-driven speaker volume — including blasting the tone test's fixed level over a silent
+       setting. So the BT sink does not take volume from the pipeline. */
+    (void)left; (void)right;
     return ESP_OK;
 }
 

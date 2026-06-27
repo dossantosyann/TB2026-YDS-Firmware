@@ -42,4 +42,16 @@ esp_err_t adc_pot_read(adc_oneshot_unit_handle_t handle, int *out_mv);
  */
 uint8_t adc_pot_to_volume(int mv);
 
+/**
+ * @brief Map a wiper voltage to an AVRCP absolute-volume value (0..0x7F) for a Bluetooth sink.
+ *
+ * Linear in the knob position: minimum -> 0 (silent), maximum -> 0x7F (loudest). Unlike
+ * adc_pot_to_volume(), there is no PCM5242 dB curve or -60 dB floor — the speaker applies its
+ * own curve, and the bottom of the knob reaches true silence.
+ *
+ * @param mv  Wiper voltage in millivolts.
+ * @return The AVRCP absolute-volume value, 0..0x7F. Pure function, never fails.
+ */
+uint8_t adc_pot_to_avrcp_volume(int mv);
+
 /** @} */

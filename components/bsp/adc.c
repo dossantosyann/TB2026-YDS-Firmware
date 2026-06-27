@@ -76,3 +76,15 @@ uint8_t adc_pot_to_volume(int mv)
     const float floor_reg = (DAC_GAIN_MAX_DB - POT_FLOOR_DB) / DAC_DB_PER_STEP;
     return (uint8_t)lroundf((1.0f - vol) * floor_reg);
 }
+
+uint8_t adc_pot_to_avrcp_volume(int mv)
+{
+    float vol = (float)(mv - POT_MV_MIN) / (float)(POT_MV_MAX - POT_MV_MIN);
+    if (vol < 0.0f) vol = 0.0f;
+    if (vol > 1.0f) vol = 1.0f;
+#if POT_INVERTED
+    vol = 1.0f - vol;
+#endif
+    // Linear: louder = higher value. vol=0 -> 0 (silent), vol=1 -> 0x7F (loudest).
+    return (uint8_t)lroundf(vol * 0x7F);
+}
