@@ -11,6 +11,7 @@
 #include "esp_a2dp_api.h"
 #include "esp_avrc_api.h"
 #include "nvs_flash.h"
+#include "nvs.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -22,6 +23,8 @@ static const char *TAG = "bluetooth";
 
 #define BT_DEVICE_NAME   "TB2026-YDS"
 #define BT_INQ_LEN       10              /* inquiry window: 10 * 1.28 s ~= 12.8 s */
+#define BT_NVS_NS        "bt"            /* NVS namespace for this service */
+#define BT_NVS_KEY_KNOWN "known"        /* blob: the s_known array (count = blob size / entry) */
 
 static bool               s_inited;
 static bool               s_scanning;    /* an inquiry is running, collecting into s_devices */
@@ -35,8 +38,10 @@ static bluetooth_device_t s_devices[BLUETOOTH_MAX_DEVICES];
 static size_t             s_device_count;
 static esp_bd_addr_t      s_peer_bda;
 static volatile bluetooth_conn_state_t s_conn_state;  /* coarse state for the UI; see bluetooth.h */
-static bt_known_device_t  s_last;        /* last connected device; guarded by s_lock */
-static bool               s_last_valid;  /* a device has been remembered (this session or seeded) */
+/* Known (paired) devices, most-recent-first; s_known[0] is the "last device". Mirrors the NVS
+   blob and is guarded by s_lock. */
+static bt_known_device_t  s_known[BLUETOOTH_MAX_KNOWN];
+static size_t             s_known_count;
 static esp_a2d_conn_hdl_t s_conn_hdl;    /* valid while connected; consumed by the BT sink */
 static uint16_t           s_audio_mtu;   /* negotiated audio MTU; caps the encoded send size */
 static bool               s_avrc_connected; /* AVRCP control channel up (separate from A2DP) */
@@ -170,22 +175,70 @@ static void gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
     }
 }
 
-/* Record the peer we just connected to as the device to offer for quick reconnect. Resolve its
-   name from the scan list when present; keep the previously known name on a reconnect to the same
-   address (a scan-less reconnect has an empty list). Runs in the BT task; takes s_lock. */
+/* Load the known-device list from NVS into s_known. The entry count is derived from the stored
+   blob size. Called once from bluetooth_init() before the stack runs, so no lock is taken. */
+static void known_load(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(BT_NVS_NS, NVS_READONLY, &h) != ESP_OK) return;  /* nothing stored yet */
+    size_t len = sizeof s_known;
+    if (nvs_get_blob(h, BT_NVS_KEY_KNOWN, s_known, &len) == ESP_OK) {
+        s_known_count = len / sizeof s_known[0];
+    }
+    nvs_close(h);
+}
+
+/* Persist s_known to NVS (erasing the key when the list is empty). The lock must be held: we read
+   s_known directly to avoid a large stack snapshot, and saves are rare (connect/forget only). */
+static void known_save_locked(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(BT_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    if (s_known_count == 0) {
+        nvs_erase_key(h, BT_NVS_KEY_KNOWN);
+    } else {
+        nvs_set_blob(h, BT_NVS_KEY_KNOWN, s_known, s_known_count * sizeof s_known[0]);
+    }
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+/* Move the device at address @p bda to the front of the known list (most recent), inserting it if
+   new. When the list is full a new device evicts the oldest (LRU). An existing entry keeps its
+   stored name. Returns the front entry. Lock must be held. */
+static bt_known_device_t *known_upsert_locked(const esp_bd_addr_t bda)
+{
+    size_t i = 0;
+    while (i < s_known_count && memcmp(s_known[i].bda, bda, ESP_BD_ADDR_LEN) != 0) i++;
+
+    bt_known_device_t entry;
+    if (i < s_known_count) {
+        entry = s_known[i];                       /* existing: keep its name */
+    } else {
+        memset(&entry, 0, sizeof entry);
+        memcpy(entry.bda, bda, ESP_BD_ADDR_LEN);
+        if (s_known_count < BLUETOOTH_MAX_KNOWN) s_known_count++;
+        i = s_known_count - 1;                     /* if full, this drops the oldest entry */
+    }
+    memmove(&s_known[1], &s_known[0], i * sizeof s_known[0]);
+    s_known[0] = entry;
+    return &s_known[0];
+}
+
+/* Record the peer we just connected to as the most-recent known device and persist the list.
+   Resolve its name from the scan list when present; a scan-less reconnect keeps the stored name.
+   Runs in the BT task; takes s_lock. */
 static void remember_peer(void)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    bool same = s_last_valid && memcmp(s_last.bda, s_peer_bda, ESP_BD_ADDR_LEN) == 0;
-    memcpy(s_last.bda, s_peer_bda, ESP_BD_ADDR_LEN);
-    if (!same) s_last.name[0] = '\0';
+    bt_known_device_t *d = known_upsert_locked(s_peer_bda);
     for (size_t i = 0; i < s_device_count; i++) {
         if (memcmp(s_devices[i].bda, s_peer_bda, ESP_BD_ADDR_LEN) == 0) {
-            strlcpy(s_last.name, s_devices[i].name, sizeof s_last.name);
+            if (s_devices[i].name[0]) strlcpy(d->name, s_devices[i].name, sizeof d->name);
             break;
         }
     }
-    s_last_valid = true;
+    known_save_locked();
     xSemaphoreGive(s_lock);
 }
 
@@ -285,6 +338,10 @@ esp_err_t bluetooth_init(void)
         err = nvs_flash_init();
     }
     if (err != ESP_OK) return err;
+
+    /* Restore the known-device list so reconnect works right after a reboot (bonds are already in
+       NVS via Bluedroid; this brings back the matching addresses/names). */
+    known_load();
 
     /* Classic-only: hand the BLE controller RAM back to the heap. */
     esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
@@ -407,12 +464,22 @@ bluetooth_conn_state_t bluetooth_get_conn_state(void)
     return s_conn_state;
 }
 
+size_t bluetooth_get_known_devices(bt_known_device_t *out, size_t cap)
+{
+    if (!out || cap == 0) return 0;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    size_t n = s_known_count < cap ? s_known_count : cap;
+    memcpy(out, s_known, n * sizeof *out);
+    xSemaphoreGive(s_lock);
+    return n;
+}
+
 bool bluetooth_get_last_device(bt_known_device_t *out)
 {
     if (!out) return false;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    bool valid = s_last_valid;
-    if (valid) *out = s_last;
+    bool valid = s_known_count > 0;
+    if (valid) *out = s_known[0];
     xSemaphoreGive(s_lock);
     return valid;
 }
@@ -421,8 +488,9 @@ void bluetooth_set_last_device(const bt_known_device_t *dev)
 {
     if (!dev) return;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_last = *dev;
-    s_last_valid = true;
+    bt_known_device_t *d = known_upsert_locked(dev->bda);
+    strlcpy(d->name, dev->name, sizeof d->name);
+    known_save_locked();
     xSemaphoreGive(s_lock);
 }
 
@@ -430,25 +498,31 @@ esp_err_t bluetooth_reconnect_last(void)
 {
     if (!s_inited) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    bool valid = s_last_valid;
+    bool valid = s_known_count > 0;
     esp_bd_addr_t bda;
-    if (valid) memcpy(bda, s_last.bda, ESP_BD_ADDR_LEN);
+    if (valid) memcpy(bda, s_known[0].bda, ESP_BD_ADDR_LEN);
     xSemaphoreGive(s_lock);
     if (!valid) return ESP_ERR_NOT_FOUND;
     return bluetooth_connect(bda);
 }
 
-esp_err_t bluetooth_forget_device(void)
+esp_err_t bluetooth_forget_device(const esp_bd_addr_t bda)
 {
+    if (!bda) return ESP_ERR_INVALID_ARG;
+
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    bool valid = s_last_valid;
-    esp_bd_addr_t bda;
-    if (valid) memcpy(bda, s_last.bda, ESP_BD_ADDR_LEN);
-    s_last_valid = false;
-    memset(&s_last, 0, sizeof s_last);
+    for (size_t i = 0; i < s_known_count; i++) {
+        if (memcmp(s_known[i].bda, bda, ESP_BD_ADDR_LEN) == 0) {
+            memmove(&s_known[i], &s_known[i + 1],
+                    (s_known_count - i - 1) * sizeof s_known[0]);
+            s_known_count--;
+            known_save_locked();
+            break;
+        }
+    }
     xSemaphoreGive(s_lock);
-    if (!valid) return ESP_OK;
-    return esp_bt_gap_remove_bond_device(bda);
+
+    return esp_bt_gap_remove_bond_device((uint8_t *)bda);  /* drop the link keys too */
 }
 
 esp_err_t bluetooth_audio_start(esp_a2d_source_data_cb_t pcm_cb)

@@ -158,12 +158,28 @@ typedef struct {
     char          name[ESP_BT_GAP_MAX_BDNAME_LEN + 1]; /**< Its name for display; "" if unknown. */
 } bt_known_device_t;
 
+/** @brief Maximum number of paired devices remembered and persisted across reboots (LRU). */
+#define BLUETOOTH_MAX_KNOWN 8
+
+/**
+ * @brief Copy the persisted list of known (paired) devices into @p out, most-recent-first.
+ *
+ * The list is restored from NVS at bluetooth_init() and updated on each successful connection;
+ * s_known[0] is the same device bluetooth_get_last_device() returns. Use it to show the paired
+ * devices for quick reconnect after a reboot, without scanning.
+ *
+ * @param out  Destination array; must hold at least @p cap entries. Ignored if NULL.
+ * @param cap  Capacity of @p out.
+ * @return Number of devices copied (min of the list size and @p cap); 0 if @p out is NULL.
+ */
+size_t bluetooth_get_known_devices(bt_known_device_t *out, size_t cap);
+
 /**
  * @brief Read the last successfully connected device (the one to offer for quick reconnect).
  *
- * Set automatically on each successful connection. Held in RAM only: this service does NOT
- * persist it — a future settings layer is expected to save it to NVS when it changes (read it
- * here on a connection) and restore it at boot via bluetooth_set_last_device().
+ * The most-recent entry of the known-device list (see bluetooth_get_known_devices()). Set
+ * automatically on each successful connection and persisted to NVS by this service, so it
+ * survives a reboot.
  *
  * @param[out] out  Filled with the remembered device. Ignored if NULL.
  * @return true if a device is remembered, false if none yet (then @p out is untouched).
@@ -171,11 +187,12 @@ typedef struct {
 bool bluetooth_get_last_device(bt_known_device_t *out);
 
 /**
- * @brief Seed the remembered device, e.g. from NVS at boot (the persistence load hook).
+ * @brief Remember a device as the most-recent one and persist it to NVS.
  *
- * Lets bluetooth_reconnect_last() work right after a reboot, before any scan this session. Does
- * not connect by itself. The bond (link keys) must still exist in NVS for a silent reconnect;
- * it does if the device was paired before and not forgotten.
+ * Inserts @p dev at the front of the known-device list (or moves it there) and saves the list, so
+ * bluetooth_reconnect_last() can target it. Normally the service does this itself on each
+ * connection; this is the manual entry point. Does not connect by itself. The bond (link keys)
+ * must still exist in NVS for a silent reconnect.
  *
  * @param dev  Device to remember. Ignored if NULL.
  */
@@ -194,14 +211,17 @@ void bluetooth_set_last_device(const bt_known_device_t *dev);
 esp_err_t bluetooth_reconnect_last(void);
 
 /**
- * @brief Forget the remembered device: drop it and remove its bond (link keys) from NVS.
+ * @brief Forget a known device: drop it from the persisted list and remove its bond from NVS.
  *
- * After this, the device no longer reconnects and must be paired again from a fresh scan. A
- * future settings layer should also clear its persisted copy when this is called.
+ * Removes the matching entry from the known-device list (saving the updated list to NVS) and
+ * removes its bond (link keys) via esp_bt_gap_remove_bond_device(). After this, the device no
+ * longer reconnects and must be paired again from a fresh scan. The bond is removed even if the
+ * address was not in the list.
  *
- * @return ESP_OK (also when nothing was remembered), or the bond-removal error.
+ * @param bda  Address of the device to forget (e.g. from bluetooth_get_known_devices()).
+ * @return ESP_OK; ESP_ERR_INVALID_ARG if @p bda is NULL; otherwise the bond-removal error.
  */
-esp_err_t bluetooth_forget_device(void);
+esp_err_t bluetooth_forget_device(const esp_bd_addr_t bda);
 
 /**
  * @brief Start streaming PCM to the connected sink through the A2DP source data path.
