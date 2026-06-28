@@ -51,12 +51,21 @@ esp_err_t player_init(void);
 /**
  * @brief Select the output and keep the volume routing consistent.
  *
- * Points the pipeline at the matching sink and tells the volume service where to send the
- * pot. Bluetooth is referenced only on this path, so a build without BT still links. Takes
- * effect on the next playback.
+ * Points the pipeline at the matching sink and tells the volume service where to send the pot.
+ * If a track is currently playing the live stream is re-routed onto the new sink immediately
+ * (restarted from the top of the current track — position-exact resume is out of scope);
+ * otherwise the choice is just remembered for the next playback. This is the single switch
+ * point for both manual selection and a future automatic BT connect/disconnect switch.
  *
- * @param out  VOLUME_OUT_DAC (jack) or VOLUME_OUT_BT (speaker).
- * @return ESP_OK; ESP_ERR_INVALID_ARG for any other value.
+ * Bluetooth is referenced only on this path, so a build without BT still links. Switching to
+ * VOLUME_OUT_BT is refused while the speaker has not acknowledged the volume (never blast):
+ * the current output is left untouched. VOLUME_OUT_NONE is a valid software mute that cuts the
+ * active output.
+ *
+ * @param out  VOLUME_OUT_DAC (jack), VOLUME_OUT_BT (speaker), or VOLUME_OUT_NONE (mute).
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if @p out is Bluetooth and the speaker has not yet
+ *         acknowledged the volume; ESP_ERR_INVALID_ARG for any other value; otherwise the
+ *         pipeline error if a live re-route fails.
  */
 esp_err_t player_set_output(volume_output_t out);
 

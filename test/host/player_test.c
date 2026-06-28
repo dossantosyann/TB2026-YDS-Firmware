@@ -92,6 +92,11 @@ bool storage_ready(void)        { return g_storage_ready; }
 bool bluetooth_volume_acked(void) { return g_bt_acked; }
 void volume_set_output(volume_output_t o) { g_vol_out = o; }
 
+/* player_init() wires the volume service's BT output to the AVRCP setter; the transport logic
+   under test never calls either, so these only need to satisfy the linker. */
+void volume_set_bt_handler(esp_err_t (*f)(uint8_t)) { (void)f; }
+esp_err_t bluetooth_set_absolute_volume(uint8_t v) { (void)v; return ESP_OK; }
+
 static const audio_sink_t g_dac, g_bt;
 const audio_sink_t *sink_i2s_dac_get(void)  { return &g_dac; }
 const audio_sink_t *sink_bluetooth_get(void) { return &g_bt; }

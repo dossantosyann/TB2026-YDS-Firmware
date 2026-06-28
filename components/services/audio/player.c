@@ -65,20 +65,46 @@ static void on_track_end(pipeline_end_reason_t reason)
 esp_err_t player_init(void)
 {
     pipeline_set_track_end_cb(on_track_end);
+    /* Route the volume service's Bluetooth output to the AVRCP setter. The player is the only
+       service that links the BT stack, so the wiring lives here (not in volume.c, which stays
+       BT-agnostic) and selecting VOLUME_OUT_BT then actually drives the speaker volume. */
+    volume_set_bt_handler(bluetooth_set_absolute_volume);
     return ESP_OK;
 }
 
 esp_err_t player_set_output(volume_output_t out)
 {
-    if (out == VOLUME_OUT_BT) {
-        pipeline_set_sink(sink_bluetooth_get());
-    } else if (out == VOLUME_OUT_DAC) {
-        pipeline_set_sink(sink_i2s_dac_get());
-    } else {
-        return ESP_ERR_INVALID_ARG;
+    const audio_sink_t *sink;
+    switch (out) {
+    case VOLUME_OUT_DAC:  sink = sink_i2s_dac_get();   break;
+    case VOLUME_OUT_BT:   sink = sink_bluetooth_get(); break;
+    case VOLUME_OUT_NONE: sink = NULL;                 break;  /* software mute: no jack-detect HW */
+    default:              return ESP_ERR_INVALID_ARG;
     }
+
+    /* Commit the target so the existing safety gate sees it, then refuse a Bluetooth switch the
+       link cannot make safe (no AVRCP, or the volume not yet acked): never blast the speaker, and
+       never tear the current output down for one we cannot actually stream to. The future auto
+       switch shares this path, so it inherits the same guard. */
+    volume_output_t prev = s_output;
     s_output = out;
+    if (bt_volume_unsafe()) {
+        s_output = prev;
+        ESP_LOGW(TAG, "BT volume not acknowledged; output unchanged");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* Re-route a live stream onto the new sink right away so the swap is audible mid-track.
+       Position-exact resume is out of scope (the decoder has no seek-on-open): the current track
+       restarts from the top. PAUSED/STOPPED only remember the choice for the next playback. */
+    bool reroute = (s_state == PLAYER_PLAYING);
+    if (reroute) pipeline_stop();
+    pipeline_set_sink(sink);
     volume_set_output(out);
+    if (reroute) {
+        if (out == VOLUME_OUT_NONE) { s_state = PLAYER_STOPPED; return ESP_OK; }
+        return start_current();
+    }
     return ESP_OK;
 }
 
