@@ -297,6 +297,12 @@ void app_init(void)
     gpio_set_level(PIN_REG_EN, 1);
     gpio_set_direction(PIN_REG_EN, GPIO_MODE_OUTPUT);
 
+    // TODO: hoist nvs_flash_init() here (single owner, once at startup) and drop the
+    // duplicated init+erase-on-corrupt dance from settings_init() and bluetooth_init().
+    // Both currently re-run it (idempotent, so harmless for now); once NVS is brought up
+    // here, settings_init() and bluetooth just nvs_open their namespaces. Must run before
+    // any service that reads NVS (settings, bluetooth).
+
     /* ===== TEST CODE — bsp bring-up. The display must come up first (it shows the
        results); the other buses are probed with soft error handling so a failure
        reports FAIL on screen instead of aborting the boot. ===== */
