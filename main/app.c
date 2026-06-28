@@ -39,11 +39,11 @@
 #define BT_AUDIO_TEST 0 /* 1: connect to the speaker, then stream a 440 Hz tone to it through the
                           BT sink (validates the A2DP audio path + AVRCP volume). Set BT_TEST 0
                           when using this; it does its own connect. */
-#define BT_SCAN_TEST 1 /* 1: live scan UI on the OLED — lists nearby devices as the inquiry finds
+#define BT_SCAN_TEST 0 /* 1: live scan UI on the OLED — lists nearby devices as the inquiry finds
                           them, UP/DOWN to navigate, SELECT (A) to connect, BACK (B) to rescan.
                           Validates scan + connect end to end without the real UI. Takes over the
                           boot (never returns), like INPUT_TEST. Set the other *_TEST to 0. */
-#define INPUT_TEST 0   /* 1: exercise the input service end to end (buttons -> ui_event_t over the
+#define INPUT_TEST 1   /* 1: exercise the input service end to end (buttons -> ui_event_t over the
                           ISR-driven queue, the same path the navigator task will use) and show each
                           button's PRESSED / NOT PRESSED state + press count on the OLED. Takes over
                           the boot (never returns), like MENU_TEST. Set the other *_TEST to 0. */

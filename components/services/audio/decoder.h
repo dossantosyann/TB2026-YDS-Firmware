@@ -40,9 +40,10 @@
 
 /** @brief PCM format of the open stream, read once after decoder_open(). */
 typedef struct {
-    uint32_t rate_hz;   /**< Sample rate in Hz (e.g. 44100, up to 192000 for WAV). */
-    uint8_t  channels;  /**< Always 2: mono sources are up-mixed to stereo. */
-    uint8_t  bits;      /**< Bits per sample: 16 (MP3, 16-bit WAV) or 24 (24-bit WAV). */
+    uint32_t rate_hz;      /**< Sample rate in Hz (e.g. 44100, up to 192000 for WAV). */
+    uint8_t  channels;     /**< Always 2: mono sources are up-mixed to stereo. */
+    uint8_t  bits;         /**< Bits per sample: 16 (MP3, 16-bit WAV) or 24 (24-bit WAV). */
+    uint32_t duration_ms;  /**< Track length in ms; 0 if unknown (e.g. headerless VBR MP3). */
 } decoder_format_t;
 
 /**

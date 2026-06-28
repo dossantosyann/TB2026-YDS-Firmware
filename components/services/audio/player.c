@@ -171,5 +171,6 @@ esp_err_t player_get_state(player_status_t *out)
     if (s_state == PLAYER_STOPPED || playlist_current(&out->track) != ESP_OK) {
         out->track = (playlist_track_t){0};
     }
+    pipeline_get_position(&out->elapsed_ms, &out->total_ms);
     return ESP_OK;
 }

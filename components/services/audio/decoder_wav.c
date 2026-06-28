@@ -87,6 +87,9 @@ static esp_err_t wav_open(FILE *f, decoder_format_t *fmt)
     fmt->rate_hz  = rate;
     fmt->channels = 2;
     fmt->bits     = (uint8_t)bits;
+    /* Exact: PCM has a constant byte-rate, so duration = data bytes / byte-rate. */
+    uint32_t byte_rate = rate * channels * (bits / 8);
+    fmt->duration_ms = byte_rate ? (uint32_t)((uint64_t)s_data_remaining * 1000u / byte_rate) : 0;
     ESP_LOGI(TAG, "WAV %u Hz, %u-bit, %u ch", (unsigned)rate, bits, channels);
     return ESP_OK;
 }

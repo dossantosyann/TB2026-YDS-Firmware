@@ -6,6 +6,7 @@
  * file. Mono frames are up-mixed to stereo so the wired sink's fixed stereo slots stay full.
  */
 #include "decoder_backend.h"
+#include "mp3_frame.h"
 #include "mp3dec.h"
 #include "esp_log.h"
 #include <stdlib.h>
@@ -71,6 +72,10 @@ static esp_err_t mp3_open(FILE *f, decoder_format_t *fmt)
     fmt->rate_hz  = (uint32_t)fi.samprate;
     fmt->channels = 2;      /* we always emit stereo */
     fmt->bits     = 16;     /* helix outputs int16 */
+    /* Duration from a Xing/Info/VBRI tag in this first frame; 0 (unknown) if none. */
+    mp3_frame_hdr_t fh;
+    fmt->duration_ms = mp3_frame_parse(s_read_ptr, (size_t)s_in_len, &fh)
+                           ? mp3_xing_duration_ms(s_read_ptr, (size_t)s_in_len, &fh) : 0;
     return ESP_OK;
 }
 

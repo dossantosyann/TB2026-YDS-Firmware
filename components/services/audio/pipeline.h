@@ -98,6 +98,19 @@ esp_err_t pipeline_resume(void);
 void pipeline_set_sink(const audio_sink_t *sink);
 
 /**
+ * @brief Read a tear-free snapshot of the current playback position.
+ *
+ * Filled from the file being decoded: @p elapsed_ms advances as PCM frames are played (frozen
+ * while paused), @p total_ms is the track duration (0 if unknown, e.g. a headerless VBR MP3).
+ * Both read back 0 when nothing is playing. Safe to call from the UI task while the audio task
+ * decodes: each field is an atomic 32-bit word, so no lock is taken.
+ *
+ * @param[out] elapsed_ms  Elapsed playback time in ms; may be NULL.
+ * @param[out] total_ms    Track duration in ms, or 0 if unknown; may be NULL.
+ */
+void pipeline_get_position(uint32_t *elapsed_ms, uint32_t *total_ms);
+
+/**
  * @brief Bring-up/diagnostic: stream a continuous sine to the current sink.
  *
  * Plays until pipeline_stop(). Not part of normal playback; it validates the real-time

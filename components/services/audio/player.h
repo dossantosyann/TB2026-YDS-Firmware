@@ -20,6 +20,7 @@
 #include "playlist.h"
 #include "volume.h"
 #include <stddef.h>
+#include <stdint.h>
 
 /**
  * @defgroup services_audio_player Playback transport
@@ -37,8 +38,10 @@ typedef enum {
 
 /** @brief Snapshot of the transport for the UI. */
 typedef struct {
-    player_state_t   state;  /**< Current transport state. */
-    playlist_track_t track;  /**< Current track; valid only when @p state is not STOPPED. */
+    player_state_t   state;       /**< Current transport state. */
+    playlist_track_t track;       /**< Current track; valid only when @p state is not STOPPED. */
+    uint32_t         elapsed_ms;  /**< Playback position in ms (0 when stopped). */
+    uint32_t         total_ms;    /**< Track duration in ms; 0 if unknown or stopped. */
 } player_status_t;
 
 /**

@@ -81,6 +81,7 @@ esp_err_t pipeline_stop(void)   { g_stop++;   return ESP_OK; }
 esp_err_t pipeline_pause(void)  { g_pause++;  return ESP_OK; }
 esp_err_t pipeline_resume(void) { g_resume++; return ESP_OK; }
 void pipeline_set_sink(const audio_sink_t *s) { (void)s; }
+void pipeline_get_position(uint32_t *e, uint32_t *t) { if (e) *e = 0; if (t) *t = 0; }
 
 static void pipe_reset(void) { g_play = g_stop = g_pause = g_resume = 0; g_play_ret = ESP_OK; g_last_path[0] = 0; }
 

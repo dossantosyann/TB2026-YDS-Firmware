@@ -47,6 +47,15 @@ static uint8_t       s_file_buf[DECODER_READ_BUF_BYTES]; /* decode chunk buffer 
 static const audio_sink_t *s_sink;                     /* output backend; defaults to the wired DAC */
 static void (*s_end_cb)(pipeline_end_reason_t);        /* track-end notify (player) */
 
+/* Playback position. The audio task writes these while decoding; the UI task reads them via
+   pipeline_get_position(). Each is a 32-bit aligned word (atomic load/store on the LX6), so a
+   plain snapshot is tear-free without a lock. s_pos_rate == 0 means nothing is playing.
+   s_pos_total_ms is set once before the decode loop; s_pos_frames advances per chunk and
+   freezes naturally while paused (the loop sleeps). */
+static volatile uint32_t s_pos_frames;     /* PCM frames played in the current file */
+static volatile uint32_t s_pos_rate;       /* current file sample rate (0 = nothing playing) */
+static volatile uint32_t s_pos_total_ms;   /* current file duration, 0 = unknown */
+
 /* Stream a sine until a CMD_STOP arrives. One period is precomputed once: the LX6 FPU is
    single-precision, so a per-sample double sin() would be software-emulated and starve the
    I2S DMA. The loop then walks that table with a phase that persists across write buffers,
@@ -122,6 +131,10 @@ static void run_file(const char *path)
     pipeline_end_reason_t reason = PIPE_END_EOF;   /* default: ran to end of file */
     bool notify = true;                            /* a user CMD_STOP ends silently */
     bool sink_on = true;
+    const uint32_t out_frame = (fmt.bits == 24) ? 8 : 4;  /* output bytes per stereo frame */
+    s_pos_frames   = 0;
+    s_pos_total_ms = fmt.duration_ms;
+    s_pos_rate     = fmt.rate_hz;                  /* set last: non-zero marks position valid */
     pipe_cmd_t c;
     for (;;) {
         if (xQueueReceive(s_cmd_q, &c, 0)) {
@@ -147,10 +160,14 @@ static void run_file(const char *path)
 
         size_t written;
         sink->write(s_file_buf, got, &written);
+        s_pos_frames += (uint32_t)(got / out_frame);
     }
 
     if (sink_on) sink->stop();
     decoder_close();
+    s_pos_rate     = 0;                            /* nothing playing: position reads back 0/0 */
+    s_pos_frames   = 0;
+    s_pos_total_ms = 0;
     if (notify && s_end_cb) s_end_cb(reason);
 }
 
@@ -194,6 +211,14 @@ void pipeline_set_sink(const audio_sink_t *sink)
 void pipeline_set_track_end_cb(void (*cb)(pipeline_end_reason_t reason))
 {
     s_end_cb = cb;
+}
+
+void pipeline_get_position(uint32_t *elapsed_ms, uint32_t *total_ms)
+{
+    uint32_t rate   = s_pos_rate;       /* read once: each is an atomic 32-bit load */
+    uint32_t frames = s_pos_frames;
+    if (elapsed_ms) *elapsed_ms = rate ? (uint32_t)((uint64_t)frames * 1000u / rate) : 0;
+    if (total_ms)   *total_ms   = s_pos_total_ms;
 }
 
 esp_err_t pipeline_play_file(const char *path)

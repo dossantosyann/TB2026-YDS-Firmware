@@ -79,6 +79,25 @@ cc -std=c11 -Wall -Wextra \
 
 "$here/player_test"
 
+# decoder duration: exact WAV duration from a fabricated header + the pipeline elapsed formula
+cc -std=c11 -Wall -Wextra \
+   -I"$root/components/services/audio" \
+   -I"$here/fakes" \
+   "$root/components/services/audio/decoder_wav.c" "$here/decoder_test.c" \
+   -o "$here/decoder_test"
+
+"$here/decoder_test"
+
+# track metadata: ID3v2 tags present/absent/truncated, audio format + Xing/Info duration (fake files)
+cc -std=c11 -Wall -Wextra \
+   -I"$root/components/services/audio" \
+   -I"$here/fakes" \
+   "$root/components/services/audio/track_meta.c" "$root/components/services/audio/mp3_frame.c" \
+   "$here/track_meta_test.c" \
+   -o "$here/track_meta_test"
+
+"$here/track_meta_test"
+
 # input logic: asserts debounce, single event per press, hold/release silent, INOKB ignored,
 # button->event mapping (pure logic, no fakes; board_pins.h is plain #defines)
 cc -std=c11 -Wall -Wextra \
