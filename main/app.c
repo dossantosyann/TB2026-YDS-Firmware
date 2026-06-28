@@ -39,7 +39,11 @@
 #define BT_AUDIO_TEST 0 /* 1: connect to the speaker, then stream a 440 Hz tone to it through the
                           BT sink (validates the A2DP audio path + AVRCP volume). Set BT_TEST 0
                           when using this; it does its own connect. */
-#define INPUT_TEST 1   /* 1: exercise the input service end to end (buttons -> ui_event_t over the
+#define BT_SCAN_TEST 1 /* 1: live scan UI on the OLED — lists nearby devices as the inquiry finds
+                          them, UP/DOWN to navigate, SELECT (A) to connect, BACK (B) to rescan.
+                          Validates scan + connect end to end without the real UI. Takes over the
+                          boot (never returns), like INPUT_TEST. Set the other *_TEST to 0. */
+#define INPUT_TEST 0   /* 1: exercise the input service end to end (buttons -> ui_event_t over the
                           ISR-driven queue, the same path the navigator task will use) and show each
                           button's PRESSED / NOT PRESSED state + press count on the OLED. Takes over
                           the boot (never returns), like MENU_TEST. Set the other *_TEST to 0. */
@@ -161,6 +165,57 @@ static void render_button_test(const uint16_t counts[6], int last)
     gfx_flush();
 }
 #endif /* INPUT_TEST */
+
+#if BT_SCAN_TEST
+/* Connection-state label per bluetooth_conn_state_t (enum order in bluetooth.h). */
+static const char *BT_CONN_LABEL[4] = {
+    [BLUETOOTH_CONN_IDLE]       = "idle",
+    [BLUETOOTH_CONN_CONNECTING] = "connecting...",
+    [BLUETOOTH_CONN_CONNECTED]  = "connected",
+    [BLUETOOTH_CONN_FAILED]     = "failed",
+};
+
+/* Live scan list: header (scan state + count), connection state, then one row per device with
+   the selected one highlighted. Shows the name when resolved, else the raw address. */
+static void render_bt_scan(const bluetooth_device_t *d, size_t n, int sel,
+                           bool scanning, bluetooth_conn_state_t conn)
+{
+    gfx_clear(GFX_BLACK);
+    gfx_draw_text(8, 6, "BT SCAN", GFX_WHITE, 2);
+
+    char hdr[32];
+    snprintf(hdr, sizeof hdr, "%s  %u dev", scanning ? "scanning..." : "done", (unsigned)n);
+    gfx_draw_text(8, 26, hdr, scanning ? gfx_rgb(255, 200, 0) : GFX_WHITE, 1);
+
+    gfx_color_t cc = conn == BLUETOOTH_CONN_CONNECTED ? COL_OK
+                   : conn == BLUETOOTH_CONN_FAILED    ? COL_FAIL : GFX_WHITE;
+    gfx_draw_text(8, 38, BT_CONN_LABEL[conn], cc, 1);
+
+    /* Scroll window so the selection is always visible (the list can exceed the screen). */
+    const int top = 54, row = 12, max_rows = (GFX_H - top) / row;
+    int first = 0;
+    if ((int)n > max_rows) {
+        first = sel - max_rows / 2;
+        if (first < 0) first = 0;
+        if (first > (int)n - max_rows) first = (int)n - max_rows;
+    }
+    for (int i = first; i < (int)n && i < first + max_rows; i++) {
+        int y = top + (i - first) * row;
+        if (i == sel) gfx_fill_rect(4, y - 2, GFX_W - 8, row, gfx_rgb(0, 0, 140));
+
+        char line[40];
+        if (d[i].name[0]) {
+            snprintf(line, sizeof line, "%-18.18s %4d", d[i].name, d[i].rssi);
+        } else {
+            const uint8_t *b = d[i].bda;
+            snprintf(line, sizeof line, "%02X:%02X:%02X:%02X:%02X:%02X %4d",
+                     b[0], b[1], b[2], b[3], b[4], b[5], d[i].rssi);
+        }
+        gfx_draw_text(8, y, line, GFX_WHITE, 1);
+    }
+    gfx_flush();
+}
+#endif /* BT_SCAN_TEST */
 
 #if TONE_TEST
 /* Re-validate the wired output path (I2S clocking + PCM5242 PLL lock + analog mute/amp
@@ -305,6 +360,37 @@ void app_run(void)
             counts[ev]++;
             last = (int)ev;
             render_button_test(counts, last);
+        }
+    }
+#endif
+
+#if BT_SCAN_TEST
+    /* ===== TEST CODE — live Bluetooth scan UI. input_init() arms the button path (expander
+       already up from app_init()); bluetooth_init() + bluetooth_scan_start() begin the inquiry,
+       which fills the device list on the BT task. The loop blocks on input with a short timeout so
+       it also redraws periodically as devices arrive. UP/DOWN move the selection, SELECT (A)
+       connects to the highlighted device, BACK (B) restarts the scan. Watch the header flip
+       scanning.../done and the connection line go connecting...->connected. Never returns. ===== */
+    ESP_ERROR_CHECK(input_init());
+    ESP_ERROR_CHECK(bluetooth_init());
+    ESP_ERROR_CHECK(bluetooth_scan_start());
+
+    static bluetooth_device_t devs[BLUETOOTH_MAX_DEVICES];
+    int sel = 0;
+    for (;;) {
+        size_t n = bluetooth_get_devices(devs, BLUETOOTH_MAX_DEVICES);
+        if (sel >= (int)n) sel = n ? (int)n - 1 : 0;
+        render_bt_scan(devs, n, sel, bluetooth_is_scanning(), bluetooth_get_conn_state());
+
+        ui_event_t ev;
+        if (input_get_event(&ev, pdMS_TO_TICKS(250))) {   /* timeout -> redraw while scanning */
+            switch (ev) {
+            case UI_EVENT_UP:     if (sel > 0) sel--; break;
+            case UI_EVENT_DOWN:   if (sel + 1 < (int)n) sel++; break;
+            case UI_EVENT_SELECT: if (n) bluetooth_connect(devs[sel].bda); break;
+            case UI_EVENT_BACK:   bluetooth_scan_start(); break;
+            default: break;
+            }
         }
     }
 #endif
