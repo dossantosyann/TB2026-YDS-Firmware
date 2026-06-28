@@ -12,8 +12,11 @@
 #include "esp_avrc_api.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include <string.h>
+#include <stdint.h>
 
 static const char *TAG = "bluetooth";
 
@@ -21,11 +24,20 @@ static const char *TAG = "bluetooth";
 #define BT_INQ_LEN       10              /* inquiry window: 10 * 1.28 s ~= 12.8 s */
 
 static bool               s_inited;
-static bool               s_seeking;     /* an inquiry is running for connect_by_name */
+static bool               s_scanning;    /* an inquiry is running, collecting into s_devices */
+static bool               s_seeking;     /* TEST ONLY: an inquiry is running for connect_by_name */
 static char               s_target[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
+
+/* Scan results, filled by the GAP callback (BT task) and read by the UI task; s_lock guards
+   both s_devices and s_device_count. */
+static SemaphoreHandle_t  s_lock;
+static bluetooth_device_t s_devices[BLUETOOTH_MAX_DEVICES];
+static size_t             s_device_count;
 static esp_bd_addr_t      s_peer_bda;
-static bool               s_connected;
-static esp_a2d_conn_hdl_t s_conn_hdl;    /* valid while s_connected; consumed by the BT sink */
+static volatile bluetooth_conn_state_t s_conn_state;  /* coarse state for the UI; see bluetooth.h */
+static bt_known_device_t  s_last;        /* last connected device; guarded by s_lock */
+static bool               s_last_valid;  /* a device has been remembered (this session or seeded) */
+static esp_a2d_conn_hdl_t s_conn_hdl;    /* valid while connected; consumed by the BT sink */
 static uint16_t           s_audio_mtu;   /* negotiated audio MTU; caps the encoded send size */
 static bool               s_avrc_connected; /* AVRCP control channel up (separate from A2DP) */
 static uint8_t            s_avrc_vol;       /* last requested absolute volume, 0..0x7F */
@@ -73,23 +85,65 @@ static bool name_from_disc(struct disc_res_param *res, char *out, size_t cap)
     return false;
 }
 
+/* Insert or update a scan result, keyed by address: the inquiry reports a device several times
+   and its name often arrives after the first (address-only) hit, so refresh an existing entry
+   rather than duplicate it. Runs in the BT task; takes s_lock around the shared list. */
+static void scan_add(struct disc_res_param *res)
+{
+    char name[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
+    bool have_name = name_from_disc(res, name, sizeof name);
+    int8_t rssi = INT8_MIN;
+    for (int i = 0; i < res->num_prop; i++) {
+        if (res->prop[i].type == ESP_BT_GAP_DEV_PROP_RSSI) {
+            rssi = *(int8_t *)res->prop[i].val;
+        }
+    }
+
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bluetooth_device_t *d = NULL;
+    for (size_t i = 0; i < s_device_count; i++) {
+        if (memcmp(s_devices[i].bda, res->bda, ESP_BD_ADDR_LEN) == 0) {
+            d = &s_devices[i];
+            break;
+        }
+    }
+    if (!d && s_device_count < BLUETOOTH_MAX_DEVICES) {
+        d = &s_devices[s_device_count++];
+        memcpy(d->bda, res->bda, ESP_BD_ADDR_LEN);
+        d->name[0] = '\0';
+        d->rssi = INT8_MIN;
+    }
+    if (d) {
+        if (have_name) strlcpy(d->name, name, sizeof d->name);
+        if (rssi != INT8_MIN) d->rssi = rssi;
+    }
+    xSemaphoreGive(s_lock);
+}
+
 static void gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
 {
     switch (event) {
-    case ESP_BT_GAP_DISC_RES_EVT: {
-        if (!s_seeking) break;
-        char name[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
-        if (!name_from_disc(&param->disc_res, name, sizeof name)) break;
-        if (strstr(name, s_target)) {
-            ESP_LOGI(TAG, "found '%s', connecting", name);
-            memcpy(s_peer_bda, param->disc_res.bda, ESP_BD_ADDR_LEN);
-            s_seeking = false;
-            esp_bt_gap_cancel_discovery();
-            esp_a2d_source_connect(s_peer_bda);
+    case ESP_BT_GAP_DISC_RES_EVT:
+        if (s_seeking) {
+            /* TEST ONLY (connect_by_name): connect to the first name match. */
+            char name[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
+            if (name_from_disc(&param->disc_res, name, sizeof name) && strstr(name, s_target)) {
+                ESP_LOGI(TAG, "found '%s', connecting", name);
+                memcpy(s_peer_bda, param->disc_res.bda, ESP_BD_ADDR_LEN);
+                s_seeking = false;
+                esp_bt_gap_cancel_discovery();
+                if (esp_a2d_source_connect(s_peer_bda) == ESP_OK) {
+                    s_conn_state = BLUETOOTH_CONN_CONNECTING;
+                }
+            }
+        } else if (s_scanning) {
+            scan_add(&param->disc_res);
         }
         break;
-    }
     case ESP_BT_GAP_DISC_STATE_CHANGED_EVT:
+        /* Track the live inquiry state so bluetooth_is_scanning() stays accurate when the
+           inquiry window ends on its own. */
+        s_scanning = (param->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STARTED);
         ESP_LOGI(TAG, "discovery %s",
                  param->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STOPPED ? "stopped" : "started");
         break;
@@ -116,20 +170,50 @@ static void gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
     }
 }
 
+/* Record the peer we just connected to as the device to offer for quick reconnect. Resolve its
+   name from the scan list when present; keep the previously known name on a reconnect to the same
+   address (a scan-less reconnect has an empty list). Runs in the BT task; takes s_lock. */
+static void remember_peer(void)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool same = s_last_valid && memcmp(s_last.bda, s_peer_bda, ESP_BD_ADDR_LEN) == 0;
+    memcpy(s_last.bda, s_peer_bda, ESP_BD_ADDR_LEN);
+    if (!same) s_last.name[0] = '\0';
+    for (size_t i = 0; i < s_device_count; i++) {
+        if (memcmp(s_devices[i].bda, s_peer_bda, ESP_BD_ADDR_LEN) == 0) {
+            strlcpy(s_last.name, s_devices[i].name, sizeof s_last.name);
+            break;
+        }
+    }
+    s_last_valid = true;
+    xSemaphoreGive(s_lock);
+}
+
 static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
 {
     switch (event) {
     case ESP_A2D_CONNECTION_STATE_EVT:
-        if (param->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTED) {
-            s_connected = true;
+        switch (param->conn_stat.state) {
+        case ESP_A2D_CONNECTION_STATE_CONNECTED:
+            s_conn_state = BLUETOOTH_CONN_CONNECTED;
             s_conn_hdl = param->conn_stat.conn_hdl;
             s_audio_mtu = param->conn_stat.audio_mtu;
+            remember_peer();
             ESP_LOGI(TAG, "A2DP connected (audio MTU %u)", s_audio_mtu);
-        } else if (param->conn_stat.state == ESP_A2D_CONNECTION_STATE_DISCONNECTED) {
-            s_connected = false;
+            break;
+        case ESP_A2D_CONNECTION_STATE_CONNECTING:
+            s_conn_state = BLUETOOTH_CONN_CONNECTING;
+            break;
+        case ESP_A2D_CONNECTION_STATE_DISCONNECTED:
+            /* An abnormal reason means the attempt failed or the link dropped unexpectedly: keep
+               it visible as FAILED. A normal close (user disconnect) returns to IDLE. */
+            s_conn_state = (param->conn_stat.disc_rsn == ESP_A2D_DISC_RSN_ABNORMAL)
+                               ? BLUETOOTH_CONN_FAILED : BLUETOOTH_CONN_IDLE;
             ESP_LOGW(TAG, "A2DP disconnected (reason %d)", param->conn_stat.disc_rsn);
-        } else {
+            break;
+        default:  /* DISCONNECTING: keep current state until DISCONNECTED arrives. */
             ESP_LOGI(TAG, "A2DP connection state %d", param->conn_stat.state);
+            break;
         }
         break;
     case ESP_A2D_AUDIO_STATE_EVT:
@@ -192,6 +276,9 @@ esp_err_t bluetooth_init(void)
 {
     if (s_inited) return ESP_OK;
 
+    s_lock = xSemaphoreCreateMutex();
+    if (!s_lock) return ESP_ERR_NO_MEM;
+
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -243,6 +330,56 @@ esp_err_t bluetooth_init(void)
     return ESP_OK;
 }
 
+esp_err_t bluetooth_scan_start(void)
+{
+    if (!s_inited) return ESP_ERR_INVALID_STATE;
+
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_device_count = 0;
+    xSemaphoreGive(s_lock);
+
+    s_scanning = true;
+    ESP_LOGI(TAG, "scanning for nearby devices");
+    return esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, BT_INQ_LEN, 0);
+}
+
+esp_err_t bluetooth_scan_stop(void)
+{
+    if (!s_scanning) return ESP_OK;
+    s_scanning = false;
+    return esp_bt_gap_cancel_discovery();
+}
+
+bool bluetooth_is_scanning(void)
+{
+    return s_scanning;
+}
+
+size_t bluetooth_get_devices(bluetooth_device_t *out, size_t cap)
+{
+    if (!out || cap == 0) return 0;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    size_t n = s_device_count < cap ? s_device_count : cap;
+    memcpy(out, s_devices, n * sizeof *out);
+    xSemaphoreGive(s_lock);
+    return n;
+}
+
+esp_err_t bluetooth_connect(const esp_bd_addr_t bda)
+{
+    if (!s_inited) return ESP_ERR_INVALID_STATE;
+    if (!bda) return ESP_ERR_INVALID_ARG;
+
+    if (s_scanning) {
+        s_scanning = false;
+        esp_bt_gap_cancel_discovery();
+    }
+    memcpy(s_peer_bda, bda, ESP_BD_ADDR_LEN);
+    esp_err_t err = esp_a2d_source_connect(s_peer_bda);
+    if (err == ESP_OK) s_conn_state = BLUETOOTH_CONN_CONNECTING;
+    return err;
+}
+
 esp_err_t bluetooth_connect_by_name(const char *name_substr)
 {
     if (!s_inited) return ESP_ERR_INVALID_STATE;
@@ -256,18 +393,67 @@ esp_err_t bluetooth_connect_by_name(const char *name_substr)
 
 esp_err_t bluetooth_disconnect(void)
 {
-    if (!s_connected) return ESP_OK;
+    if (s_conn_state != BLUETOOTH_CONN_CONNECTED) return ESP_OK;
     return esp_a2d_source_disconnect(s_peer_bda);
 }
 
 bool bluetooth_is_connected(void)
 {
-    return s_connected;
+    return s_conn_state == BLUETOOTH_CONN_CONNECTED;
+}
+
+bluetooth_conn_state_t bluetooth_get_conn_state(void)
+{
+    return s_conn_state;
+}
+
+bool bluetooth_get_last_device(bt_known_device_t *out)
+{
+    if (!out) return false;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool valid = s_last_valid;
+    if (valid) *out = s_last;
+    xSemaphoreGive(s_lock);
+    return valid;
+}
+
+void bluetooth_set_last_device(const bt_known_device_t *dev)
+{
+    if (!dev) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_last = *dev;
+    s_last_valid = true;
+    xSemaphoreGive(s_lock);
+}
+
+esp_err_t bluetooth_reconnect_last(void)
+{
+    if (!s_inited) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool valid = s_last_valid;
+    esp_bd_addr_t bda;
+    if (valid) memcpy(bda, s_last.bda, ESP_BD_ADDR_LEN);
+    xSemaphoreGive(s_lock);
+    if (!valid) return ESP_ERR_NOT_FOUND;
+    return bluetooth_connect(bda);
+}
+
+esp_err_t bluetooth_forget_device(void)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool valid = s_last_valid;
+    esp_bd_addr_t bda;
+    if (valid) memcpy(bda, s_last.bda, ESP_BD_ADDR_LEN);
+    s_last_valid = false;
+    memset(&s_last, 0, sizeof s_last);
+    xSemaphoreGive(s_lock);
+    if (!valid) return ESP_OK;
+    return esp_bt_gap_remove_bond_device(bda);
 }
 
 esp_err_t bluetooth_audio_start(esp_a2d_source_data_cb_t pcm_cb)
 {
-    if (!s_connected) return ESP_ERR_INVALID_STATE;
+    if (s_conn_state != BLUETOOTH_CONN_CONNECTED) return ESP_ERR_INVALID_STATE;
     if (!pcm_cb) return ESP_ERR_INVALID_ARG;
 
     esp_err_t err = esp_a2d_source_register_data_callback(pcm_cb);

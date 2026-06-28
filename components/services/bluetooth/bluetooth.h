@@ -14,8 +14,11 @@
 #pragma once
 
 #include "esp_err.h"
-#include "esp_a2dp_api.h"   /* esp_a2d_source_data_cb_t for the audio data path */
+#include "esp_a2dp_api.h"     /* esp_a2d_source_data_cb_t for the audio data path */
+#include "esp_gap_bt_api.h"   /* esp_bd_addr_t, ESP_BT_GAP_MAX_BDNAME_LEN */
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 /**
  * @defgroup services_bluetooth Bluetooth service
@@ -36,13 +39,74 @@
  */
 esp_err_t bluetooth_init(void);
 
+/** @brief Maximum number of devices retained from a single scan. */
+#define BLUETOOTH_MAX_DEVICES 16
+
+/** @brief One device found during a scan; the unit the UI lists and selects from. */
+typedef struct {
+    esp_bd_addr_t bda;                              /**< Bluetooth device address (the identity). */
+    char          name[ESP_BT_GAP_MAX_BDNAME_LEN + 1]; /**< Advertised name; "" until it resolves. */
+    int8_t        rssi;                             /**< Signal strength in dBm; INT8_MIN if unknown. */
+} bluetooth_device_t;
+
 /**
- * @brief Discover nearby devices and connect to the first whose name contains @p name_substr.
+ * @brief Start an inquiry that collects nearby devices into a list (does not auto-connect).
  *
- * Starts an inquiry; on each result the device name (from the inquiry record or EIR) is matched
- * against @p name_substr (case-sensitive substring). The first match stops the inquiry and an
- * A2DP source connection is initiated. Connection progress is reported through the log; query
- * bluetooth_is_connected() for the outcome. Requires bluetooth_init().
+ * Clears the device list and starts a general inquiry. Results accumulate in the background
+ * (deduplicated by address; a name that arrives after the address updates the existing entry);
+ * read them with bluetooth_get_devices(). The inquiry stops on its own after the inquiry window
+ * or when bluetooth_scan_stop()/bluetooth_connect() is called. Query bluetooth_is_scanning().
+ *
+ * Caller responsibility: an inquiry floods the radio and breaks an active A2DP stream, so the
+ * caller must pause Bluetooth playback before scanning (the service stays player-agnostic and
+ * does not do this itself). Requires bluetooth_init().
+ *
+ * @return ESP_OK if the inquiry started; ESP_ERR_INVALID_STATE if not initialised; otherwise the
+ *         GAP error.
+ */
+esp_err_t bluetooth_scan_start(void);
+
+/**
+ * @brief Stop an inquiry started by bluetooth_scan_start(). No-op if not scanning.
+ * @return ESP_OK, or the underlying GAP error.
+ */
+esp_err_t bluetooth_scan_stop(void);
+
+/**
+ * @brief Report whether an inquiry is currently running.
+ * @return true while scanning (cleared when the inquiry ends, is stopped, or a connect begins).
+ */
+bool bluetooth_is_scanning(void);
+
+/**
+ * @brief Copy the current scan results into @p out (thread-safe snapshot).
+ *
+ * Copies up to @p cap entries from the internal list under a lock, so it is safe to call from
+ * the UI task while the inquiry fills the list from the Bluetooth task.
+ *
+ * @param out  Destination array; must hold at least @p cap entries. Ignored if NULL.
+ * @param cap  Capacity of @p out.
+ * @return Number of devices copied (min of the list size and @p cap); 0 if @p out is NULL.
+ */
+size_t bluetooth_get_devices(bluetooth_device_t *out, size_t cap);
+
+/**
+ * @brief Connect the A2DP source to a device chosen by address (e.g. a scan result).
+ *
+ * Cancels any running inquiry, then initiates the connection. Connection progress is reported
+ * through the log; query bluetooth_is_connected() for the outcome. Requires bluetooth_init().
+ *
+ * @param bda  Address to connect to, typically taken from a bluetooth_device_t.
+ * @return ESP_OK if the connect was issued; ESP_ERR_INVALID_STATE if not initialised;
+ *         ESP_ERR_INVALID_ARG if @p bda is NULL; otherwise the A2DP error.
+ */
+esp_err_t bluetooth_connect(const esp_bd_addr_t bda);
+
+/**
+ * @brief TEST ONLY — scan and connect to the first device whose name contains @p name_substr.
+ *
+ * Convenience for bring-up/host tests: starts an inquiry and auto-connects to the first name
+ * match. Not used by the final build (the UI uses bluetooth_scan_start() + bluetooth_connect()).
  *
  * @param name_substr  Substring to look for in advertised device names, e.g. "JBL".
  * @return ESP_OK if the inquiry started; ESP_ERR_INVALID_STATE if not initialised;
@@ -63,6 +127,81 @@ esp_err_t bluetooth_disconnect(void);
  * @return true if connected to a sink device, false otherwise.
  */
 bool bluetooth_is_connected(void);
+
+/** @brief Coarse connection state for the UI to render (connecting / connected / failure). */
+typedef enum {
+    BLUETOOTH_CONN_IDLE,        /**< No link and no attempt in progress. */
+    BLUETOOTH_CONN_CONNECTING,  /**< A connect is in progress (set when issued, cleared on result). */
+    BLUETOOTH_CONN_CONNECTED,   /**< A2DP link established. */
+    BLUETOOTH_CONN_FAILED,      /**< The last attempt failed, or an established link dropped abnormally. */
+} bluetooth_conn_state_t;
+
+/**
+ * @brief Read the current connection state.
+ *
+ * Richer than bluetooth_is_connected(): lets the UI show a "connecting…" spinner while an attempt
+ * is in flight and a failure message when it does not complete. The state stays
+ * @ref BLUETOOTH_CONN_FAILED until the next connect attempt or a clean disconnect.
+ *
+ * @return The current @ref bluetooth_conn_state_t.
+ */
+bluetooth_conn_state_t bluetooth_get_conn_state(void);
+
+/**
+ * @brief The identity of a remembered device, enough to reconnect without scanning again.
+ *
+ * Address + name; the address is what reconnection actually needs (the link keys are already
+ * bonded in NVS by Bluedroid), the name is only for display.
+ */
+typedef struct {
+    esp_bd_addr_t bda;                                 /**< Address of the remembered device. */
+    char          name[ESP_BT_GAP_MAX_BDNAME_LEN + 1]; /**< Its name for display; "" if unknown. */
+} bt_known_device_t;
+
+/**
+ * @brief Read the last successfully connected device (the one to offer for quick reconnect).
+ *
+ * Set automatically on each successful connection. Held in RAM only: this service does NOT
+ * persist it — a future settings layer is expected to save it to NVS when it changes (read it
+ * here on a connection) and restore it at boot via bluetooth_set_last_device().
+ *
+ * @param[out] out  Filled with the remembered device. Ignored if NULL.
+ * @return true if a device is remembered, false if none yet (then @p out is untouched).
+ */
+bool bluetooth_get_last_device(bt_known_device_t *out);
+
+/**
+ * @brief Seed the remembered device, e.g. from NVS at boot (the persistence load hook).
+ *
+ * Lets bluetooth_reconnect_last() work right after a reboot, before any scan this session. Does
+ * not connect by itself. The bond (link keys) must still exist in NVS for a silent reconnect;
+ * it does if the device was paired before and not forgotten.
+ *
+ * @param dev  Device to remember. Ignored if NULL.
+ */
+void bluetooth_set_last_device(const bt_known_device_t *dev);
+
+/**
+ * @brief Reconnect to the remembered device by address, without scanning.
+ *
+ * Manual reconnect (no auto-reconnect at boot by design): the UI calls this from the menu. Works
+ * on a bonded device because pairing is already stored. Watch bluetooth_get_conn_state() for the
+ * outcome.
+ *
+ * @return ESP_OK if the connect was issued; ESP_ERR_INVALID_STATE if not initialised;
+ *         ESP_ERR_NOT_FOUND if no device is remembered; otherwise the A2DP error.
+ */
+esp_err_t bluetooth_reconnect_last(void);
+
+/**
+ * @brief Forget the remembered device: drop it and remove its bond (link keys) from NVS.
+ *
+ * After this, the device no longer reconnects and must be paired again from a fresh scan. A
+ * future settings layer should also clear its persisted copy when this is called.
+ *
+ * @return ESP_OK (also when nothing was remembered), or the bond-removal error.
+ */
+esp_err_t bluetooth_forget_device(void);
 
 /**
  * @brief Start streaming PCM to the connected sink through the A2DP source data path.
