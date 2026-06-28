@@ -56,6 +56,17 @@ cc -std=c11 -Wall -Wextra \
 
 "$here/storage_test"
 
+# playlist: asserts next/prev/select + wrap, repeat OFF ends, not-ready/empty/oob failing loud,
+# rescan clamp, shuffle covering every track once (fake storage index, no SD)
+cc -std=c11 -Wall -Wextra \
+   -I"$root/components/services/audio" \
+   -I"$root/components/services/storage" \
+   -I"$here/fakes" \
+   "$root/components/services/audio/playlist.c" "$here/playlist_test.c" \
+   -o "$here/playlist_test"
+
+"$here/playlist_test"
+
 # input logic: asserts debounce, single event per press, hold/release silent, INOKB ignored,
 # button->event mapping (pure logic, no fakes; board_pins.h is plain #defines)
 cc -std=c11 -Wall -Wextra \
