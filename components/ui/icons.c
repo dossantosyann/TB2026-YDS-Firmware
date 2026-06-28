@@ -1,8 +1,6 @@
 #include <stdint.h>
 
 /* music.png: 32x32, 1 bpp, MSB-first, stride 4 bytes/row. */
-#define ICON_MUSIC_W 32
-#define ICON_MUSIC_H 32
 const uint8_t icon_music[128] = {
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
@@ -40,8 +38,6 @@ const uint8_t icon_music[128] = {
 
 
 /* stats.png: 32x32, 1 bpp, MSB-first, stride 4 bytes/row. */
-#define ICON_STATS_W 32
-#define ICON_STATS_H 32
 const uint8_t icon_stats[128] = {
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
@@ -79,8 +75,6 @@ const uint8_t icon_stats[128] = {
 
 
 /* settings1.png: 32x32, 1 bpp, MSB-first, stride 4 bytes/row. */
-#define ICON_SETTINGS_W 32
-#define ICON_SETTINGS_H 32
 const uint8_t icon_settings[128] = {
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
@@ -119,8 +113,6 @@ const uint8_t icon_settings[128] = {
 
 
 /* storage.png: 32x32, 1 bpp, MSB-first, stride 4 bytes/row. */
-#define ICON_STORAGE_W 32
-#define ICON_STORAGE_H 32
 const uint8_t icon_storage[128] = {
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,

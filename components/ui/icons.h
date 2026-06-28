@@ -11,12 +11,12 @@ extern const uint8_t icon_music[];
 #define ICON_STATS_H 32
 extern const uint8_t icon_stats[];
 
-/* settings1.png: 32x32, 1 bpp, MSB-first. */
+/* settings.png: 32x32, 1 bpp, MSB-first. */
 #define ICON_SETTINGS1_W 32
 #define ICON_SETTINGS1_H 32
-extern const uint8_t icon_settings1[];
+extern const uint8_t icon_settings[];
 
-/* settings2.png: 32x32, 1 bpp, MSB-first. Alternate design; not used yet. */
-#define ICON_SETTINGS2_W 32
-#define ICON_SETTINGS2_H 32
-extern const uint8_t icon_settings2[];
+/* storage.png: 32x32, 1 bpp, MSB-first. */
+#define ICON_STORAGE_W 32
+#define ICON_STORAGE_H 32
+extern const uint8_t icon_storage[];
