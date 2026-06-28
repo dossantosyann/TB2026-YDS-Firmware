@@ -1,4 +1,5 @@
 #include "root_menu.h"
+#include "navigator.h"
 #include "gfx.h"
 #include "icons.h"
 
@@ -22,9 +23,32 @@ static const uint8_t *const s_icons[N_TILES] = {
     icon_settings1,
 };
 
-static void on_enter(screen_t *self)                    { (void)self; }
-static void on_exit(screen_t *self)                     { (void)self; }
-static void handle_input(screen_t *self, ui_event_t ev) { (void)self; (void)ev; }
+/* Screen pushed when each tile is activated, same order as s_icons.
+   TODO: wire to the real screens (music list, stats, settings) once they exist. */
+static screen_t *const s_targets[N_TILES] = {
+    NULL,   /* music    */
+    NULL,   /* stats    */
+    NULL,   /* settings */
+};
+
+/* Highlighted tile. Singleton screen, so file-static state is fine. */
+static int s_selected = 0;
+
+static void on_enter(screen_t *self) { (void)self; }
+static void on_exit(screen_t *self)  { (void)self; }
+
+static void handle_input(screen_t *self, ui_event_t ev)
+{
+    (void)self;
+    switch (ev) {
+    case UI_EVENT_LEFT:  if (s_selected > 0)           s_selected--; break;
+    case UI_EVENT_RIGHT: if (s_selected < N_TILES - 1) s_selected++; break;
+    case UI_EVENT_SELECT:
+        if (s_targets[s_selected]) navigator_push(s_targets[s_selected]);
+        break;
+    default: break;   /* BACK is a no-op: this is the home screen. */
+    }
+}
 
 static void render(screen_t *self)
 {
@@ -39,15 +63,24 @@ static void render(screen_t *self)
         int x = x0 + i * (TILE + GAP);
         int r = x + TILE;   /* one past the right edge  */
         int b = y + TILE;   /* one past the bottom edge */
-        /* 2px white corner brackets; the interior stays black from gfx_clear. */
-        gfx_fill_rect(x,           y,           BRACKET, BORDER,  GFX_WHITE);  /* top-left  */
-        gfx_fill_rect(x,           y,           BORDER,  BRACKET, GFX_WHITE);
-        gfx_fill_rect(r - BRACKET, y,           BRACKET, BORDER,  GFX_WHITE);  /* top-right */
-        gfx_fill_rect(r - BORDER,  y,           BORDER,  BRACKET, GFX_WHITE);
-        gfx_fill_rect(x,           b - BORDER,  BRACKET, BORDER,  GFX_WHITE);  /* bot-left  */
-        gfx_fill_rect(x,           b - BRACKET, BORDER,  BRACKET, GFX_WHITE);
-        gfx_fill_rect(r - BRACKET, b - BORDER,  BRACKET, BORDER,  GFX_WHITE);  /* bot-right */
-        gfx_fill_rect(r - BORDER,  b - BRACKET, BORDER,  BRACKET, GFX_WHITE);
+        if (i == s_selected) {
+            /* Selected: full 2px white frame (one 36px-wide tile only, so the
+               OLED IR-drop the brackets avoid stays negligible). */
+            gfx_fill_rect(x,          y,          TILE,   BORDER, GFX_WHITE);  /* top    */
+            gfx_fill_rect(x,          b - BORDER, TILE,   BORDER, GFX_WHITE);  /* bottom */
+            gfx_fill_rect(x,          y,          BORDER, TILE,   GFX_WHITE);  /* left   */
+            gfx_fill_rect(r - BORDER, y,          BORDER, TILE,   GFX_WHITE);  /* right  */
+        } else {
+            /* 2px white corner brackets; the interior stays black from gfx_clear. */
+            gfx_fill_rect(x,           y,           BRACKET, BORDER,  GFX_WHITE);  /* top-left  */
+            gfx_fill_rect(x,           y,           BORDER,  BRACKET, GFX_WHITE);
+            gfx_fill_rect(r - BRACKET, y,           BRACKET, BORDER,  GFX_WHITE);  /* top-right */
+            gfx_fill_rect(r - BORDER,  y,           BORDER,  BRACKET, GFX_WHITE);
+            gfx_fill_rect(x,           b - BORDER,  BRACKET, BORDER,  GFX_WHITE);  /* bot-left  */
+            gfx_fill_rect(x,           b - BRACKET, BORDER,  BRACKET, GFX_WHITE);
+            gfx_fill_rect(r - BRACKET, b - BORDER,  BRACKET, BORDER,  GFX_WHITE);  /* bot-right */
+            gfx_fill_rect(r - BORDER,  b - BRACKET, BORDER,  BRACKET, GFX_WHITE);
+        }
         /* Icon pattern in white, inside the brackets. */
         gfx_blit_1bpp(x + BORDER, y + BORDER, ICON_SZ, ICON_SZ, s_icons[i], GFX_WHITE);
     }
