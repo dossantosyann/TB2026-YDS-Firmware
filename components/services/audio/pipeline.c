@@ -7,12 +7,15 @@
 #include "pipeline.h"
 #include "audio_sink.h"
 #include "sink_i2s_dac.h"
+#include "decoder.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
 
 static const char *TAG = "pipeline";
 
@@ -28,16 +31,21 @@ static const char *TAG = "pipeline";
 #define PIPE_TASK_CORE     1            /* APP_CPU: keep the audio loop off core 0 (Wi-Fi/BT) */
 #define PIPE_TASK_STACK    4096
 
-enum { CMD_PLAY_TONE, CMD_STOP };
+#define PIPE_PATH_MAX      320          /* matches STORAGE_PATH_MAX: "/sdcard/" + LFN + nul */
+
+enum { CMD_PLAY_TONE, CMD_PLAY_FILE, CMD_STOP, CMD_PAUSE, CMD_RESUME };
 
 typedef struct {
     uint8_t  cmd;
-    uint32_t freq;
+    uint32_t freq;                      /* CMD_PLAY_TONE */
+    char     path[PIPE_PATH_MAX];       /* CMD_PLAY_FILE */
 } pipe_cmd_t;
 
 static QueueHandle_t s_cmd_q;
-static int16_t       s_chunk[PIPE_CHUNK_FRAMES * 2];   /* interleaved stereo write buffer */
+static int16_t       s_chunk[PIPE_CHUNK_FRAMES * 2];   /* interleaved stereo tone buffer */
+static uint8_t       s_file_buf[DECODER_READ_BUF_BYTES]; /* decode chunk buffer (16/24-bit) */
 static const audio_sink_t *s_sink;                     /* output backend; defaults to the wired DAC */
+static void (*s_end_cb)(pipeline_end_reason_t);        /* track-end notify (player) */
 
 /* Stream a sine until a CMD_STOP arrives. One period is precomputed once: the LX6 FPU is
    single-precision, so a per-sample double sin() would be software-emulated and starve the
@@ -85,14 +93,76 @@ static void run_tone(uint32_t freq_hz)
     ESP_LOGI(TAG, "tone: stopped");
 }
 
+/* Decode a file to the current sink until EOF, CMD_STOP, or a decode error. Volume is the
+   volume service's job during playback, so (unlike the tone) nothing here calls set_volume.
+   CMD_PAUSE powers the sink down while keeping the decoder open at its position, then sleeps
+   on the queue until CMD_RESUME (restart the sink, keep decoding) or CMD_STOP. On a natural
+   end (EOF or error) the transport is notified so it can chain to the next track; a
+   user-initiated stop is silent. */
+static void run_file(const char *path)
+{
+    ESP_LOGI(TAG, "file: %s", path);
+
+    if (decoder_open(path) != ESP_OK) {
+        ESP_LOGE(TAG, "file: open failed");
+        if (s_end_cb) s_end_cb(PIPE_END_ERROR);
+        return;
+    }
+
+    decoder_format_t fmt;
+    const audio_sink_t *sink = s_sink;
+    if (decoder_format(&fmt) != ESP_OK ||
+        sink->start(fmt.rate_hz, fmt.bits, fmt.channels) != ESP_OK) {
+        ESP_LOGE(TAG, "file: format/start failed");
+        decoder_close();
+        if (s_end_cb) s_end_cb(PIPE_END_ERROR);
+        return;
+    }
+
+    pipeline_end_reason_t reason = PIPE_END_EOF;   /* default: ran to end of file */
+    bool notify = true;                            /* a user CMD_STOP ends silently */
+    bool sink_on = true;
+    pipe_cmd_t c;
+    for (;;) {
+        if (xQueueReceive(s_cmd_q, &c, 0)) {
+            if (c.cmd == CMD_STOP) { notify = false; break; }
+            if (c.cmd == CMD_PAUSE) {
+                sink->stop();                      /* path down; decoder kept open */
+                sink_on = false;
+                do { xQueueReceive(s_cmd_q, &c, portMAX_DELAY); } while (c.cmd == CMD_PAUSE);
+                if (c.cmd == CMD_STOP) { notify = false; break; }
+                if (sink->start(fmt.rate_hz, fmt.bits, fmt.channels) != ESP_OK) {
+                    reason = PIPE_END_ERROR; break;
+                }
+                sink_on = true;
+            }
+            /* CMD_RESUME while running, or a stray PLAY, is ignored (player serialises). */
+        }
+
+        size_t got = 0;
+        if (decoder_read(s_file_buf, sizeof s_file_buf, &got) != ESP_OK) {
+            reason = PIPE_END_ERROR; break;
+        }
+        if (got == 0) break;                       /* EOF */
+
+        size_t written;
+        sink->write(s_file_buf, got, &written);
+    }
+
+    if (sink_on) sink->stop();
+    decoder_close();
+    if (notify && s_end_cb) s_end_cb(reason);
+}
+
 static void audio_task(void *arg)
 {
     (void)arg;
     pipe_cmd_t c;
     for (;;) {
-        /* Idle: block until something asks to play. A CMD_STOP received here is a no-op. */
-        if (xQueueReceive(s_cmd_q, &c, portMAX_DELAY) && c.cmd == CMD_PLAY_TONE) {
-            run_tone(c.freq);
+        /* Idle: block until something asks to play. STOP/PAUSE/RESUME received here are no-ops. */
+        if (xQueueReceive(s_cmd_q, &c, portMAX_DELAY)) {
+            if (c.cmd == CMD_PLAY_TONE)      run_tone(c.freq);
+            else if (c.cmd == CMD_PLAY_FILE) run_file(c.path);
         }
     }
 }
@@ -119,6 +189,35 @@ esp_err_t pipeline_init(void)
 void pipeline_set_sink(const audio_sink_t *sink)
 {
     if (sink) s_sink = sink;
+}
+
+void pipeline_set_track_end_cb(void (*cb)(pipeline_end_reason_t reason))
+{
+    s_end_cb = cb;
+}
+
+esp_err_t pipeline_play_file(const char *path)
+{
+    if (!s_cmd_q) return ESP_ERR_INVALID_STATE;
+    if (!path || strlen(path) >= PIPE_PATH_MAX) return ESP_ERR_INVALID_ARG;
+
+    pipe_cmd_t c = { .cmd = CMD_PLAY_FILE };
+    strcpy(c.path, path);
+    return xQueueSend(s_cmd_q, &c, 0) == pdPASS ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t pipeline_pause(void)
+{
+    if (!s_cmd_q) return ESP_ERR_INVALID_STATE;
+    pipe_cmd_t c = { .cmd = CMD_PAUSE };
+    return xQueueSend(s_cmd_q, &c, 0) == pdPASS ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t pipeline_resume(void)
+{
+    if (!s_cmd_q) return ESP_ERR_INVALID_STATE;
+    pipe_cmd_t c = { .cmd = CMD_RESUME };
+    return xQueueSend(s_cmd_q, &c, 0) == pdPASS ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t pipeline_play_tone(uint32_t freq_hz)

@@ -26,6 +26,12 @@
  * @{
  */
 
+/** @brief Why a file playback ended, reported to the track-end callback. */
+typedef enum {
+    PIPE_END_EOF,    /**< The decoder reached end of file: play the next track. */
+    PIPE_END_ERROR,  /**< Open or decode failed: stop and surface the error. */
+} pipeline_end_reason_t;
+
 /**
  * @brief Create the pinned audio task and its command queue.
  *
@@ -35,6 +41,50 @@
  * @return ESP_OK; ESP_ERR_NO_MEM if the queue or task cannot be created.
  */
 esp_err_t pipeline_init(void);
+
+/**
+ * @brief Register the callback fired when a file playback ends on its own (EOF or error).
+ *
+ * The transport service (player) registers this to chain to the next track. The callback
+ * runs in the audio task's context right after the stream closes, so it must not block; the
+ * intended body just picks the next track and calls pipeline_play_file() (which only enqueues
+ * a command). A user-initiated pipeline_stop() does NOT fire it.
+ *
+ * @param cb  Callback, or NULL to clear.
+ */
+void pipeline_set_track_end_cb(void (*cb)(pipeline_end_reason_t reason));
+
+/**
+ * @brief Play an audio file: decode it to the current sink at the file's own format.
+ *
+ * Opens @p path, reads its real PCM format (44.1k/16, 48k/24, ...) and starts the sink for
+ * it, then streams until end of file, pipeline_stop(), or a decode error. The pipeline does
+ * NOT set the volume here: the volume service owns the pot->output mapping during playback.
+ * On natural end (EOF or error) the track-end callback fires.
+ *
+ * @param path  POSIX path under the SD mount, e.g. "/sdcard/track.mp3".
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if pipeline_init() has not run;
+ *         ESP_ERR_INVALID_ARG if @p path is NULL or too long; ESP_FAIL if the queue is full.
+ */
+esp_err_t pipeline_play_file(const char *path);
+
+/**
+ * @brief Pause file playback: stop feeding the sink while keeping the stream position.
+ *
+ * Powers the output path down (no I2S underrun, minimal draw) and leaves the decoder open at
+ * its current position; the audio task sleeps until pipeline_resume() or pipeline_stop().
+ * No effect on the diagnostic tone.
+ *
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if pipeline_init() has not run; ESP_FAIL if full.
+ */
+esp_err_t pipeline_pause(void);
+
+/**
+ * @brief Resume a playback paused with pipeline_pause(): restart the sink and keep decoding.
+ *
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if pipeline_init() has not run; ESP_FAIL if full.
+ */
+esp_err_t pipeline_resume(void);
 
 /**
  * @brief Select the output backend used by the next playback.

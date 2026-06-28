@@ -2,5 +2,6 @@
 gfx_test
 navigator_test
 menu_screen_test
+player_test
 *.ppm
 *.png

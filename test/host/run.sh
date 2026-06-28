@@ -67,6 +67,18 @@ cc -std=c11 -Wall -Wextra \
 
 "$here/playlist_test"
 
+# player transport: asserts play->playing, EOF auto-advance, next/prev, end-of-list per repeat,
+# repeat-one replay, pause/resume, fail-loud errors, BT volume-ack gate (fake pipeline+playlist)
+cc -std=c11 -Wall -Wextra \
+   -I"$root/components/services/audio" \
+   -I"$root/components/services/storage" \
+   -I"$root/components/services/bluetooth" \
+   -I"$here/fakes" \
+   "$root/components/services/audio/player.c" "$here/player_test.c" \
+   -o "$here/player_test"
+
+"$here/player_test"
+
 # input logic: asserts debounce, single event per press, hold/release silent, INOKB ignored,
 # button->event mapping (pure logic, no fakes; board_pins.h is plain #defines)
 cc -std=c11 -Wall -Wextra \
