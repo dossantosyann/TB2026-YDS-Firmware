@@ -45,3 +45,13 @@ cc -std=c11 -Wall -Wextra \
    -o "$here/root_menu_test"
 
 "$here/root_menu_test"
+
+# storage: asserts extension filter (case-insensitive), sort, paths, overflow guard
+cc -std=c11 -Wall -Wextra \
+   -I"$root/components/services/storage" \
+   -I"$root/components/drivers/sdcard" \
+   -I"$here/fakes" \
+   "$root/components/services/storage/storage.c" "$here/storage_test.c" \
+   -o "$here/storage_test"
+
+"$here/storage_test"
