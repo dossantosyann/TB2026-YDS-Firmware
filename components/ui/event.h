@@ -17,6 +17,8 @@ typedef enum {
     UI_EVENT_DOWN,    /**< Move selection down / to the next item. */
     UI_EVENT_SELECT,  /**< Activate the current item. */
     UI_EVENT_BACK,    /**< Go back / pop the current screen. */
+    UI_EVENT_LEFT,    /**< Move/seek left (previous). */
+    UI_EVENT_RIGHT,   /**< Move/seek right (next). */
 } ui_event_t;
 
 /** @} */

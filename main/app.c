@@ -16,6 +16,7 @@
 #include "fuel_gauge.h"        /* TEST CODE */
 #include "display_oled.h"      /* TEST CODE */
 #include "root_menu.h"         /* TEST CODE */
+#include "input.h"             /* TEST CODE */
 #include "driver/i2c_master.h" /* TEST CODE */
 #include <stdio.h>             /* TEST CODE */
 #include <string.h>            /* TEST CODE */
@@ -30,7 +31,7 @@
 #define MENU_TEST  0   /* 1: show the root menu instead of the bring-up screens */
 #define TONE_TEST  0   /* 1: emit a continuous 440 Hz tone on the wired DAC path and stay there
                           (overrides MENU_TEST/the status loop). Set to 0 for normal boot. */
-#define PIPELINE_TEST 1 /* 1: route a 440 Hz tone through the audio pipeline task (pinned core 1)
+#define PIPELINE_TEST 0 /* 1: route a 440 Hz tone through the audio pipeline task (pinned core 1)
                           instead of the direct-write tone above. Set TONE_TEST 0 to use this. */
 #define BT_TEST    0   /* 1: bring up Bluetooth and connect to a speaker by name (connection
                           test only, no streaming yet). 0 compiles the radio out entirely
@@ -38,6 +39,10 @@
 #define BT_AUDIO_TEST 0 /* 1: connect to the speaker, then stream a 440 Hz tone to it through the
                           BT sink (validates the A2DP audio path + AVRCP volume). Set BT_TEST 0
                           when using this; it does its own connect. */
+#define INPUT_TEST 1   /* 1: exercise the input service end to end (buttons -> ui_event_t over the
+                          ISR-driven queue, the same path the navigator task will use) and show each
+                          button's PRESSED / NOT PRESSED state + press count on the OLED. Takes over
+                          the boot (never returns), like MENU_TEST. Set the other *_TEST to 0. */
 
 #define COL_OK   gfx_rgb(0, 220, 0)
 #define COL_FAIL gfx_rgb(220, 0, 0)
@@ -125,6 +130,37 @@ static void render_gauge(const fuel_gauge_data_t *d, esp_err_t rd)
 
     gfx_flush();
 }
+
+#if INPUT_TEST
+/* Display name per ui_event_t value (enum order in event.h). */
+static const char *EV_LABEL[6] = {
+    [UI_EVENT_UP]     = "UP",
+    [UI_EVENT_DOWN]   = "DOWN",
+    [UI_EVENT_SELECT] = "A (SELECT)",
+    [UI_EVENT_BACK]   = "B (BACK)",
+    [UI_EVENT_LEFT]   = "LEFT",
+    [UI_EVENT_RIGHT]  = "RIGHT",
+};
+
+/* One row per button: the most recently pressed shows PRESSED (green), the rest NOT PRESSED.
+   'counts' is the per-event tally — a press bumps exactly one, and holding bumps nothing more,
+   which is what proves the discrete one-press-one-event behaviour on real hardware. */
+static void render_button_test(const uint16_t counts[6], int last)
+{
+    gfx_clear(GFX_BLACK);
+    gfx_draw_text(8, 6, "BUTTON TEST", GFX_WHITE, 2);
+    int y = 34;
+    for (int i = 0; i < 6; i++) {
+        bool pressed = (i == last);
+        char buf[32];
+        snprintf(buf, sizeof buf, "%-10s %-11s%3u",
+                 EV_LABEL[i], pressed ? "PRESSED" : "NOT PRESSED", counts[i]);
+        gfx_draw_text(8, y, buf, pressed ? COL_OK : GFX_WHITE, 1);
+        y += 18;
+    }
+    gfx_flush();
+}
+#endif /* INPUT_TEST */
 
 #if TONE_TEST
 /* Re-validate the wired output path (I2S clocking + PCM5242 PLL lock + analog mute/amp
@@ -253,6 +289,26 @@ void app_init(void)
 
 void app_run(void)
 {
+#if INPUT_TEST
+    /* ===== TEST CODE — exercise the input service through its production path: input_init()
+       arms both ISRs, the input task and the event queue (the expander was already brought up
+       in app_init()); this loop is the consumer, blocking on input_get_event() exactly like the
+       future navigator task. Press each button and watch its event light up PRESSED with the
+       count incrementing once per press. Takes over the boot and never returns. ===== */
+    ESP_ERROR_CHECK(input_init());
+    static uint16_t counts[6] = {0};
+    int last = -1;
+    render_button_test(counts, last);
+    for (;;) {
+        ui_event_t ev;
+        if (input_get_event(&ev, portMAX_DELAY)) {
+            counts[ev]++;
+            last = (int)ev;
+            render_button_test(counts, last);
+        }
+    }
+#endif
+
 #if PIPELINE_TEST
     /* ===== TEST CODE — kick off the tone, then fall through. Unlike audio_tone_test(),
        pipeline_play_tone() returns immediately: playback runs in the pinned audio task,

@@ -55,3 +55,14 @@ cc -std=c11 -Wall -Wextra \
    -o "$here/storage_test"
 
 "$here/storage_test"
+
+# input logic: asserts debounce, single event per press, hold/release silent, INOKB ignored,
+# button->event mapping (pure logic, no fakes; board_pins.h is plain #defines)
+cc -std=c11 -Wall -Wextra \
+   -I"$root/components/services/input" \
+   -I"$root/components/ui" \
+   -I"$root/components/bsp" \
+   "$root/components/services/input/input_logic.c" "$here/input_test.c" \
+   -o "$here/input_test"
+
+"$here/input_test"
