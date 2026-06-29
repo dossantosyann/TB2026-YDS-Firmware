@@ -61,13 +61,17 @@ void app_run(void)
     status_bar_draw();
     gfx_flush();
 
-    /* UI task: block on the input queue (no busy-poll = idle CPU between presses),
-       dispatch each event to the top screen, then present the frame it drew. */
+    /* UI task: wait for input (no busy-poll = idle CPU between presses), dispatch each
+       event to the top screen, then present the frame it drew. A live screen (one with
+       refresh_ms > 0, e.g. the stats pages) shortens the wait so it gets re-rendered on
+       its timer; every other screen blocks indefinitely and costs no periodic wake-up. */
     for (;;) {
         ui_event_t ev;
-        if (input_get_event(&ev, portMAX_DELAY)) {
+        if (input_get_event(&ev, navigator_refresh_ticks())) {
             navigator_tick(ev);
-            gfx_flush();
+        } else {
+            navigator_render();   /* timed out: refresh the live screen's data */
         }
+        gfx_flush();
     }
 }

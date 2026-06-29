@@ -17,6 +17,7 @@
 #include "esp_err.h"
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * @defgroup services_storage Storage service
@@ -60,6 +61,19 @@ bool storage_ready(void);
 
 /** @brief Number of tracks in the index (0 before any successful scan). */
 size_t storage_count(void);
+
+/**
+ * @brief Total and used size of the mounted FAT volume, in bytes.
+ *
+ * Thin wrapper over esp_vfs_fat_info(): a full scan of the FAT, so call it from a
+ * non-time-critical context (the stats page), not the audio path.
+ *
+ * @param[out] total_bytes  Volume capacity in bytes (ignored if NULL).
+ * @param[out] used_bytes   Bytes in use = total - free (ignored if NULL).
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if the card is not mounted; otherwise the
+ *         underlying FATFS error.
+ */
+esp_err_t storage_get_usage(uint64_t *total_bytes, uint64_t *used_bytes);
 
 /**
  * @brief Full POSIX path of a track, ready for decoder_open().

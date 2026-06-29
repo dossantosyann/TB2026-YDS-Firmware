@@ -11,5 +11,5 @@ idf_component_register(
         "audio/output_select.c"
         "settings/bt_devices.c"
     INCLUDE_DIRS "." "audio" "storage" "stats" "settings"
-    REQUIRES ui audio bluetooth power settings storage
+    REQUIRES ui audio audio_dac bluetooth power settings storage input bsp fuel_gauge sdcard esp_timer esp_app_format
 )

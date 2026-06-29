@@ -26,6 +26,16 @@
 esp_err_t i2c_bus_init(i2c_master_bus_handle_t *out_handle);
 
 /**
+ * @brief The shared bus handle cached by i2c_bus_init().
+ *
+ * Lets a consumer that didn't run init (e.g. the stats diagnostics page probing
+ * device presence) reach the bus without threading the handle through every layer.
+ *
+ * @return The master bus handle, or NULL if i2c_bus_init() has not succeeded yet.
+ */
+i2c_master_bus_handle_t i2c_bus_handle(void);
+
+/**
  * @brief Probe 0x08..0x77 and log every ACKing address. Bring-up helper.
  *
  * @param bus  Master bus handle from i2c_bus_init().

@@ -2,6 +2,8 @@
 
 #include "navigator.h"
 #include "status_bar.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define NAV_STACK_MAX 8
 
@@ -22,6 +24,14 @@ void navigator_pop(void)
     if (top->on_exit) top->on_exit(top);
 }
 
+void navigator_render(void)
+{
+    if (s_depth == 0) return;
+    screen_t *top = s_stack[s_depth - 1];
+    if (top->render) top->render(top);
+    status_bar_draw();   /* battery overlay, on top of every screen */
+}
+
 void navigator_tick(ui_event_t event)
 {
     if (s_depth == 0) return;
@@ -30,8 +40,12 @@ void navigator_tick(ui_event_t event)
     /* handle_input may have pushed or popped, so re-read the top and render
        whatever is now on screen -- otherwise a push/pop would only take effect
        on the next event (the "press twice to enter/leave" bug). */
-    if (s_depth == 0) return;
-    top = s_stack[s_depth - 1];
-    if (top->render) top->render(top);
-    status_bar_draw();   /* battery overlay, on top of every screen */
+    navigator_render();
+}
+
+uint32_t navigator_refresh_ticks(void)
+{
+    if (s_depth == 0) return portMAX_DELAY;
+    unsigned ms = s_stack[s_depth - 1]->refresh_ms;
+    return ms ? pdMS_TO_TICKS(ms) : portMAX_DELAY;
 }

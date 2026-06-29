@@ -32,6 +32,7 @@
 typedef struct {
     uint8_t  prev;                      /**< Pressed mask at the previous call (bit per button). */
     uint32_t last_ms[INPUT_BTN_COUNT];  /**< Timestamp of each button's last accepted press. */
+    uint32_t count[INPUT_BTN_COUNT];    /**< Accepted (debounced) presses per button since reset. */
 } input_debounce_t;
 
 /**

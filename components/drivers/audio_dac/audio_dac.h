@@ -100,4 +100,12 @@ esp_err_t audio_dac_standby(bool standby);
  */
 esp_err_t audio_dac_get_clock_status(uint8_t *status);
 
+/**
+ * @brief Whether the DAC's I2C device is registered (audio_dac_init() has run).
+ *
+ * Lets passive callers (diagnostics) avoid touching the bus before the audio path is
+ * brought up. Does not probe the chip.
+ */
+bool audio_dac_ready(void);
+
 /** @} */

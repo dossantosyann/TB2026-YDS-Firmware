@@ -18,7 +18,10 @@
 #include "esp_err.h"
 #include "event.h"
 #include "board_pins.h"
+#include "input_logic.h"
 #include "freertos/FreeRTOS.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 /**
  * @defgroup services_input Input service
@@ -55,5 +58,26 @@ esp_err_t input_init(void);
  * @return true if an event was dequeued, false on timeout.
  */
 bool input_get_event(ui_event_t *out, TickType_t ticks_to_wait);
+
+/**
+ * @brief Live button snapshot for the diagnostics screen.
+ *
+ * Both arrays are in button order: Up, Down, Left, Right, B (back), A (select) — matching
+ * BTN[] in @ref services_input_logic. Filled by @ref input_get_diag.
+ */
+typedef struct {
+    bool     pressed[INPUT_BTN_COUNT];  /**< true while the button is currently held. */
+    uint32_t count[INPUT_BTN_COUNT];    /**< Debounced presses since boot. */
+} input_diag_t;
+
+/**
+ * @brief Read the current button state and per-button press counts.
+ *
+ * Lock-free read of the input task's debounce state: a value may be momentarily stale, which is
+ * fine for a diagnostics display. No-op-safe before input_init() (reports all-released, zero counts).
+ *
+ * @param[out] out  Receives the snapshot.
+ */
+void input_get_diag(input_diag_t *out);
 
 /** @} */

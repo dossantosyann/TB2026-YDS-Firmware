@@ -29,6 +29,9 @@ struct screen_t {
     void (*on_exit)(screen_t *self);                        /**< Called when the screen is popped. */
     void (*handle_input)(screen_t *self, ui_event_t event); /**< Process one input event. */
     void (*render)(screen_t *self);                         /**< Draw the screen into the framebuffer. */
+    unsigned refresh_ms;  /**< 0 (default): event-driven, the UI task blocks until input. >0: the
+                               task wakes every refresh_ms to re-render this screen, for live data
+                               (e.g. the stats pages). Only live screens cost periodic wake-ups. */
 };
 
 /** @} */

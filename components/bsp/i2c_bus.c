@@ -4,6 +4,10 @@
 
 static const char *TAG = "i2c_bus";
 
+/* Cached so diagnostics (and any later consumer) can reach the bus without app.c
+   having to hand its handle around. Set once by i2c_bus_init(). */
+static i2c_master_bus_handle_t s_bus;
+
 esp_err_t i2c_bus_init(i2c_master_bus_handle_t *out_handle)
 {
     const i2c_master_bus_config_t cfg = {
@@ -14,8 +18,16 @@ esp_err_t i2c_bus_init(i2c_master_bus_handle_t *out_handle)
         .glitch_ignore_cnt = 7,                 // hardware noise filter
         .flags.enable_internal_pullup = false,  // PCB has external pull-ups
     };
-    return i2c_new_master_bus(&cfg, out_handle);
+    esp_err_t err = i2c_new_master_bus(&cfg, out_handle);
+    if (err == ESP_OK) {
+        s_bus = *out_handle;
+    }
+    return err;
+}
 
+i2c_master_bus_handle_t i2c_bus_handle(void)
+{
+    return s_bus;
 }
 
 void i2c_bus_scan(i2c_master_bus_handle_t bus)

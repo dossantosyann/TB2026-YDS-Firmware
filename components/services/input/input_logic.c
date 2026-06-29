@@ -46,6 +46,7 @@ int input_logic_update(input_debounce_t *st, uint8_t exp_port, bool a_pressed,
         if (now && !was && (uint32_t)(now_ms - st->last_ms[i]) >= INPUT_DEBOUNCE_MS) {
             if (n < out_cap) out[n++] = BTN[i].ev;
             st->last_ms[i] = now_ms;
+            st->count[i]++;
         }
     }
     st->prev = pressed;

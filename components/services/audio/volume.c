@@ -8,6 +8,7 @@
 #include "audio_dac.h"
 
 static adc_oneshot_unit_handle_t s_adc;
+static bool    s_adc_ready;                /* pot ADC unit brought up (independent of full init) */
 static bool    s_ready;
 static int8_t  s_balance;                 /* L/R trim in DAC volume register steps */
 static uint8_t s_last_l = 0xFF, s_last_r = 0xFF;  /* 0xFF sentinel: first write always goes */
@@ -29,16 +30,32 @@ static void apply_balance(uint8_t base, uint8_t *l, uint8_t *r)
     *r = (uint8_t)ri;
 }
 
+/* Bring up the pot ADC once, shared by volume_init() and the diagnostic volume_read_mv(): either
+   may run first (volume_read_mv is used before the audio path is wired), so init is idempotent. */
+static esp_err_t ensure_adc(void)
+{
+    if (s_adc_ready) return ESP_OK;
+    esp_err_t err = adc_pot_init(&s_adc);
+    if (err == ESP_OK) s_adc_ready = true;
+    return err;
+}
+
 esp_err_t volume_init(void)
 {
     if (s_ready) return ESP_OK;            /* idempotent */
 
-    esp_err_t err = adc_pot_init(&s_adc);
+    esp_err_t err = ensure_adc();
     if (err != ESP_OK) return err;
 
     s_ready = true;
     volume_poll(NULL, NULL);               /* push the initial knob position to the active output */
     return ESP_OK;
+}
+
+bool volume_read_mv(int *out_mv)
+{
+    if (ensure_adc() != ESP_OK) return false;   /* lazily owns the ADC if volume_init() hasn't run */
+    return adc_pot_read(s_adc, out_mv) == ESP_OK;
 }
 
 bool volume_poll(int *out_mv, uint8_t *out_level)

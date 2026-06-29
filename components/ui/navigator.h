@@ -5,6 +5,7 @@
 #pragma once
 
 #include "screen.h"
+#include <stdint.h>
 
 /**
  * @defgroup ui_navigator Navigator
@@ -29,5 +30,25 @@ void navigator_pop(void);
  * @param event  Input event to dispatch. No-op if the stack is empty.
  */
 void navigator_tick(ui_event_t event);
+
+/**
+ * @brief Re-render the top screen and the status bar, without an input event.
+ *
+ * Used by the UI loop to refresh a live screen on its timer tick. No-op if the
+ * stack is empty.
+ */
+void navigator_render(void);
+
+/**
+ * @brief How long the UI task should wait for input before a live re-render.
+ *
+ * Returns the top screen's @ref screen_t::refresh_ms as ticks, or portMAX_DELAY when
+ * it is 0 (event-driven) or the stack is empty — so a non-live screen blocks forever
+ * and costs no periodic wake-ups.
+ *
+ * @return FreeRTOS tick count to pass to input_get_event() (portMAX_DELAY when no
+ *         live refresh is wanted).
+ */
+uint32_t navigator_refresh_ticks(void);
 
 /** @} */

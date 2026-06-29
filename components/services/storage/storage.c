@@ -2,6 +2,7 @@
 #include "sdcard.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_vfs_fat.h"
 
 #include <dirent.h>
 #include <string.h>
@@ -119,6 +120,21 @@ bool storage_ready(void)
 size_t storage_count(void)
 {
     return s_scanned ? s_count : 0;
+}
+
+esp_err_t storage_get_usage(uint64_t *total_bytes, uint64_t *used_bytes)
+{
+    if (!s_mounted) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint64_t total = 0, freeb = 0;
+    esp_err_t err = esp_vfs_fat_info(SDCARD_MOUNT_POINT, &total, &freeb);
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (total_bytes) *total_bytes = total;
+    if (used_bytes)  *used_bytes  = total - freeb;
+    return ESP_OK;
 }
 
 const char *storage_track_path(size_t index)

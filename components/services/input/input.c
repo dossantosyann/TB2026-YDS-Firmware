@@ -118,3 +118,12 @@ bool input_get_event(ui_event_t *out, TickType_t ticks_to_wait)
     if (!s_queue) return false;
     return xQueueReceive(s_queue, out, ticks_to_wait) == pdTRUE;
 }
+
+void input_get_diag(input_diag_t *out)
+{
+    /* Lock-free read of the input task's state (display-only; a torn value is harmless). */
+    for (int i = 0; i < INPUT_BTN_COUNT; i++) {
+        out->pressed[i] = (s_debounce.prev >> i) & 1u;
+        out->count[i]   = s_debounce.count[i];
+    }
+}

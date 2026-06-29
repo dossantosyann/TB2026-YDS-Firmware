@@ -57,6 +57,18 @@ esp_err_t volume_init(void);
 bool volume_poll(int *out_mv, uint8_t *out_level);
 
 /**
+ * @brief Read the pot wiper voltage without touching any output (for diagnostics).
+ *
+ * Unlike volume_poll(), this never writes the DAC or AVRCP — it only samples the ADC. Brings up
+ * the pot ADC on first call if volume_init() has not run yet, so the diagnostics screen can show
+ * the knob voltage before the audio path is wired.
+ *
+ * @param[out] out_mv  Receives the wiper voltage in millivolts.
+ * @return true on a successful read, false if the ADC is unavailable.
+ */
+bool volume_read_mv(int *out_mv);
+
+/**
  * @brief Select which output volume_poll() drives. Default VOLUME_OUT_DAC.
  *
  * Switching re-applies the current knob position to the new output on the next poll.

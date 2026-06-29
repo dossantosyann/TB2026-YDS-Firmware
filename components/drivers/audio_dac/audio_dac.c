@@ -182,3 +182,8 @@ esp_err_t audio_dac_get_clock_status(uint8_t *status)
 {
     return read_reg(REG_CLOCK_STATUS, status);
 }
+
+bool audio_dac_ready(void)
+{
+    return s_dev != NULL;
+}

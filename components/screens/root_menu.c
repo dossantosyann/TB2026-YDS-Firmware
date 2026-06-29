@@ -37,7 +37,7 @@ static const uint8_t *const s_icons[N_ROWS] = {
 static const char *const s_labels[N_ROWS] = {
     "Music",
     "Storage",
-    "Stats",
+    "Statistics",
     "Settings",
 };
 
