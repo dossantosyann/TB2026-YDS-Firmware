@@ -1,6 +1,6 @@
 /**
  * @file root_menu.h
- * @brief The home screen shown after boot: a centered row of icon tiles.
+ * @brief The home screen shown after boot: a vertical list of icon+label entries.
  */
 #pragma once
 

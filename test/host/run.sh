@@ -34,13 +34,21 @@ cc -std=c11 -Wall -Wextra \
 
 "$here/menu_screen_test"
 
-# root_menu render: asserts the 3 white icon tiles, writes root_menu_test.ppm
+# root_menu render: asserts the 4 icon+label rows and the selected-row brackets,
+# writes root_menu_test.ppm
 cc -std=c11 -Wall -Wextra \
    -I"$root/components/ui" \
    -I"$root/components/screens" \
+   -I"$root/components/screens/audio" \
+   -I"$root/components/screens/storage" \
+   -I"$root/components/screens/stats" \
+   -I"$root/components/screens/settings" \
    -I"$root/components/drivers/display_oled" \
    -I"$here/fakes" \
    "$root/components/ui/gfx.c" "$root/components/ui/icons.c" \
+   "$root/components/ui/navigator.c" \
+   "$root/components/screens/audio/music_screen.c" "$root/components/screens/storage/storage_screen.c" \
+   "$root/components/screens/stats/stats_screen.c" "$root/components/screens/settings/settings_screen.c" \
    "$root/components/screens/root_menu.c" "$here/root_menu_test.c" \
    -o "$here/root_menu_test"
 

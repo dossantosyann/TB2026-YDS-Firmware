@@ -1,7 +1,8 @@
 /* Host unit test for root_menu's render(). No ESP-IDF, no hardware:
-   renders the home screen and asserts the 3 white tiles are drawn at the
-   expected centered positions, each with a black icon inside, then dumps
-   root_menu_test.ppm to eyeball. */
+   renders the home screen (a vertical list of 4 icon+label rows) and asserts the
+   geometry -- icon and label present on every row, white corner brackets only on
+   the selected row (with black mid-edges, the whole point of the passive-OLED
+   redesign), and no brackets on the others -- then dumps root_menu_test.ppm. */
 #include <stdio.h>
 #include <stdint.h>
 #include "esp_err.h"
@@ -24,7 +25,7 @@ static void expect(const char *name, int x, int y, gfx_color_t want)
     }
 }
 
-/* Is any pixel of `want` present in the rect? Confirms an icon drew. */
+/* Is any pixel of `want` present in the rect? Confirms an icon/label drew. */
 static void has_pixel(const char *name, int x0, int y0, int x1, int y1, gfx_color_t want)
 {
     for (int y = y0; y < y1; y++)
@@ -34,32 +35,53 @@ static void has_pixel(const char *name, int x0, int y0, int x1, int y1, gfx_colo
     failures++;
 }
 
+/* Is any pixel neither black nor white in the rect? Confirms a colored (accent)
+   icon drew, without pinning the exact palette (which is user-tweakable). */
+static void has_color(const char *name, int x0, int y0, int x1, int y1)
+{
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++) {
+            gfx_color_t c = px(x, y);
+            if (c != GFX_BLACK && c != GFX_WHITE) return;
+        }
+    printf("  FAIL %-16s no colored pixel in [%d,%d]-[%d,%d]\n", name, x0, y0, x1, y1);
+    failures++;
+}
+
 int main(void)
 {
     screen_t *s = root_menu();
-    s->render(s);
+    s->render(s);   /* default selection is row 0 (Music) */
 
-    /* Geometry mirrors root_menu.c: TILE 36, GAP 12, 3 tiles.
-       row_w=132, x0=22, y=70; tile i at x = 22 + i*48; corner brackets 2px/8px,
-       icon inset 2px. */
-    static const int tile_x[3] = { 22, 70, 118 };
-    const int y = 70;
-    const int TILE = 36;
+    /* Geometry mirrors root_menu.c: 4 rows of 44px; icon 32x32 at x=8, inset 6px;
+       label at x=48 scale 2; corner brackets 2px thick / 8px arms, full width. */
+    const int ROW_H = 44;
 
-    expect("bg_black", 0, 0, GFX_BLACK);   /* outside the row stays black */
+    for (int i = 0; i < 4; i++) {
+        int y = i * ROW_H;
+        /* Every row shows its label in white, selected or not. */
+        has_pixel("label_white", 48, y + 12, 144, y + 32, GFX_WHITE);
 
-    for (int i = 0; i < 3; i++) {
-        int x = tile_x[i];
-        /* Corner brackets: the four corners are white... */
-        expect("corner_tl", x,            y,            GFX_WHITE);
-        expect("corner_br", x + TILE - 1, y + TILE - 1, GFX_WHITE);
-        /* ...but the middle of the top/bottom edge is black: no long horizontal
-           line. This is the whole point of the redesign (kills the row halo). */
-        expect("top_mid_black", x + TILE / 2, y,            GFX_BLACK);
-        expect("bot_mid_black", x + TILE / 2, y + TILE - 1, GFX_BLACK);
-        /* Interior is mostly black, with the icon in white. */
-        has_pixel("interior_black", x + 2, y + 2, x + 34, y + 34, GFX_BLACK);
-        has_pixel("icon_white",     x + 2, y + 2, x + 34, y + 34, GFX_WHITE);
+        if (i == 0) {
+            /* Selected row: icon is drawn in its accent color (not white). */
+            has_color("icon_accent", 8, y + 6, 40, y + 38);
+            /* ...and the four corners are white... */
+            expect("corner_tl", 0,          y,             GFX_WHITE);
+            expect("corner_tr", GFX_W - 1,  y,             GFX_WHITE);
+            expect("corner_bl", 0,          y + ROW_H - 1, GFX_WHITE);
+            expect("corner_br", GFX_W - 1,  y + ROW_H - 1, GFX_WHITE);
+            /* ...but the middle of the top/bottom edge is black: no long horizontal
+               line, which is the whole point of the redesign (kills the row halo). */
+            expect("top_mid_black", GFX_W / 2, y,             GFX_BLACK);
+            expect("bot_mid_black", GFX_W / 2, y + ROW_H - 1, GFX_BLACK);
+        } else {
+            /* Unselected rows: icon stays white, no decoration (corners black). */
+            has_pixel("icon_white", 8, y + 6, 40, y + 38, GFX_WHITE);
+            expect("nosel_tl", 0,         y,             GFX_BLACK);
+            expect("nosel_tr", GFX_W - 1, y,             GFX_BLACK);
+            expect("nosel_bl", 0,         y + ROW_H - 1, GFX_BLACK);
+            expect("nosel_br", GFX_W - 1, y + ROW_H - 1, GFX_BLACK);
+        }
     }
 
     FILE *f = fopen("root_menu_test.ppm", "wb");
