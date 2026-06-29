@@ -26,27 +26,42 @@ extern const uint8_t icon_storage[];
 #define ICON_VOLUME_H 16
 extern const uint8_t icon_volume[];
 
-/* volume.png: 16x16, 1 bpp, MSB-first. */
+/* play.png: 16x16, 1 bpp, MSB-first. */
 #define ICON_PLAY_W 16
 #define ICON_PLAY_H 16
 extern const uint8_t icon_play[];
 
-/* volume.png: 16x16, 1 bpp, MSB-first. */
+/* pause.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_PAUSE_W 16
+#define ICON_PAUSE_H 16
+extern const uint8_t icon_pause[];
+
+/* prev.png: 16x16, 1 bpp, MSB-first. */
 #define ICON_PREV_W 16
 #define ICON_PREV_H 16
 extern const uint8_t icon_prev[];
 
-/* volume.png: 16x16, 1 bpp, MSB-first. */
+/* next.png: 16x16, 1 bpp, MSB-first. */
 #define ICON_NEXT_W 16
 #define ICON_NEXT_H 16
 extern const uint8_t icon_next[];
 
-/* volume.png: 16x16, 1 bpp, MSB-first. */
+/* shuffle.png: 16x16, 1 bpp, MSB-first. */
 #define ICON_SHUFFLE_W 16
 #define ICON_SHUFFLE_H 16
 extern const uint8_t icon_shuffle[];
 
-/* volume.png: 16x16, 1 bpp, MSB-first. */
+/* loop.png: 16x16, 1 bpp, MSB-first. */
 #define ICON_LOOP_W 16
 #define ICON_LOOP_H 16
 extern const uint8_t icon_loop[];
+
+/* arrow_up.png: 8x8 1 bpp, MSB-first. */
+#define ICON_ARROW_UP_W 8
+#define ICON_ARROW_UP_H 8
+extern const uint8_t icon_arrow_up[];
+
+/* arrow_down.png: 8x8 1 bpp, MSB-first. */
+#define ICON_ARROW_DOWN_W 8
+#define ICON_ARROW_DOWN_H 8
+extern const uint8_t icon_arrow_down[];

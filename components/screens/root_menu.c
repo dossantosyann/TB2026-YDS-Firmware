@@ -1,5 +1,5 @@
 #include "root_menu.h"
-#include "music_screen.h"
+#include "now_playing.h"
 #include "storage_screen.h"
 #include "stats_screen.h"
 #include "settings_screen.h"
@@ -58,7 +58,7 @@ static void ensure_targets(void)
 {
     static int done = 0;
     if (done) return;
-    s_targets[0] = music_screen();
+    s_targets[0] = now_playing_screen();
     s_targets[1] = storage_screen();
     s_targets[2] = stats_screen();
     s_targets[3] = settings_screen();

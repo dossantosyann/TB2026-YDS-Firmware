@@ -2,7 +2,6 @@ idf_component_register(
     SRCS
         "menu_screen.c"
         "root_menu.c"
-        "audio/music_screen.c"
         "storage/storage_screen.c"
         "stats/stats_screen.c"
         "settings/settings_screen.c"

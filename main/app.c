@@ -12,6 +12,12 @@
 #include "fuel_gauge.h"
 #include "maintenance.h"
 #include "storage.h"
+#include "playlist.h"
+#include "audio_dac.h"
+#include "sink_i2s_dac.h"
+#include "volume.h"
+#include "pipeline.h"
+#include "player.h"
 #include "navigator.h"
 #include "status_bar.h"
 #include "root_menu.h"
@@ -29,6 +35,7 @@ static void storage_scan_task(void *arg)
     if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
         ESP_LOGW("app", "storage_init: %s", esp_err_to_name(err));
     }
+    playlist_sync();
     vTaskDelete(NULL);
 }
 
@@ -56,6 +63,13 @@ void app_init(void)
     ESP_ERROR_CHECK(fuel_gauge_init(s_i2c));
     ESP_ERROR_CHECK(maintenance_init());
 
+    /* Audio chain: PCM5242 I2C control, then I2S sink, then volume (ADC pot + DAC writes),
+       then the pipeline (spawns audio task), then the player (wires end-of-track callback). */
+    ESP_ERROR_CHECK(audio_dac_init(s_i2c));
+    ESP_ERROR_CHECK(sink_i2s_dac_init());
+    ESP_ERROR_CHECK(volume_init());
+    ESP_ERROR_CHECK(pipeline_init());
+    ESP_ERROR_CHECK(player_init());
 }
 
 void app_run(void)

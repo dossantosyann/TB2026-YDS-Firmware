@@ -5,6 +5,7 @@
 #include "storage.h"
 #include "sdcard.h"
 #include "player.h"
+#include "playlist.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -140,6 +141,7 @@ static void delete_selected(void)
     if (!build_full_path(full, sizeof full, s_entries[s_sel].name)) return;
     remove(full);
     storage_rescan();
+    playlist_sync();
     scan_current();
     s_state = FB_BROWSE;
 }

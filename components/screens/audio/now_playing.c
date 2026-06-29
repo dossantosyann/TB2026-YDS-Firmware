@@ -1,2 +1,231 @@
-#include "screen.h"
-#include "audio_sink.h"
+#include "now_playing.h"
+#include "navigator.h"
+#include "gfx.h"
+#include "icons.h"
+#include "status_bar.h"
+#include "player.h"
+#include "track_meta.h"
+#include "volume.h"
+#include "adc.h"
+#include <string.h>
+#include <stdio.h>
+
+/* ---- layout ------------------------------------------------------------ */
+/* Content area: x=0..151 (152 px). Right strip x=152..175 = volume column. */
+#define CONT_W      152
+#define CONT_CX     76
+
+/* Nav hint icon+text centering: icon (8px) + 2px gap + label text at scale 1. */
+#define NAV_ICON_GAP  2
+#define NAV_TOP_IX    ((CONT_W - (ICON_ARROW_UP_W   + NAV_ICON_GAP + 16 * GFX_CHAR_W)) / 2)
+#define NAV_BOT_IX    ((CONT_W - (ICON_ARROW_DOWN_W + NAV_ICON_GAP +  8 * GFX_CHAR_W)) / 2)
+
+/* Vertical positions */
+#define NAV_TOP_Y   (STATUS_BAR_H + 2)
+#define TITLE_Y     (STATUS_BAR_H + 30)
+#define ARTIST_Y    (TITLE_Y + 20)
+#define ALBUM_Y     (ARTIST_Y + 10)
+#define QUALITY_Y   (ALBUM_Y + 10)
+#define CTRL_Y      (ALBUM_Y + 30)
+#define PROG_ROW_Y  (CTRL_Y + 22)
+#define TIME_Y      (PROG_ROW_Y + 18)
+#define NAV_BOT_Y   164
+
+/* Transport icon x positions (all icons are 16×16) */
+#define CTRL_PREV_X (CONT_CX - 40)
+#define CTRL_PLAY_X (CONT_CX - 8)
+#define CTRL_NEXT_X (CONT_CX + 24)
+
+/* Progress bar: 4px margin | loop icon | 2px | bar | 2px | shuffle icon | 4px margin */
+#define PROG_MARGIN  4
+#define PROG_LOOP_X  PROG_MARGIN
+#define PROG_BAR_X   (PROG_LOOP_X + ICON_LOOP_W + 2)
+#define PROG_BAR_W   108
+#define PROG_BAR_Y   (PROG_ROW_Y + 6)
+#define PROG_BAR_H   4
+#define SHUF_ICON_X  (PROG_BAR_X + PROG_BAR_W + 2)
+
+/* Volume column (right strip) */
+#define VOL_ICON_X  156
+#define VOL_ICON_Y  (STATUS_BAR_H + 4)
+#define VOL_BAR_X   160
+#define VOL_BAR_Y   (VOL_ICON_Y + 20)
+#define VOL_BAR_W   8
+#define VOL_BAR_H   (NAV_BOT_Y - VOL_BAR_Y)
+
+/* Scrollable text clip zone: left edge of loop icon → right edge of shuffle icon */
+#define TEXT_X0     PROG_LOOP_X                        /* 4   */
+#define TEXT_X1     (SHUF_ICON_X + ICON_SHUFFLE_W)     /* 148 */
+#define TEXT_MAX_W  (TEXT_X1 - TEXT_X0)                /* 144 */
+
+/* 2 px per 250 ms tick ≈ 8 px/s; 8-tick (2 s) pause before restarting */
+#define SCROLL_SPEED  8
+#define SCROLL_PAUSE  2
+
+#define CACHED_PATH_MAX 128
+
+/* ---- state ------------------------------------------------------------- */
+typedef struct { int32_t offset; int32_t pause; } scroll_t;
+
+static track_meta_t  s_meta;
+static char          s_cached_path[CACHED_PATH_MAX];
+static scroll_t      s_title_sc, s_artist_sc, s_album_sc;
+
+/* ---- helpers ----------------------------------------------------------- */
+static void reset_scroll(void)
+{
+    s_title_sc.offset  = 0; s_title_sc.pause  = SCROLL_PAUSE;
+    s_artist_sc.offset = 0; s_artist_sc.pause = SCROLL_PAUSE;
+    s_album_sc.offset  = 0; s_album_sc.pause  = SCROLL_PAUSE;
+}
+
+/* Draw text clipped to [TEXT_X0, TEXT_X1), scrolling if it overflows.
+   Short strings are centered; scroll state is advanced on each call. */
+static void draw_scrolled(int y, const char *text, int scale, scroll_t *sc, gfx_color_t color)
+{
+    int text_px = (int)strlen(text) * GFX_CHAR_W * scale;
+    int h       = GFX_CHAR_H * scale;
+
+    if (text_px <= TEXT_MAX_W) {
+        sc->offset = 0; sc->pause = 0;
+        gfx_draw_text(TEXT_X0 + (TEXT_MAX_W - text_px) / 2, y, text, color, scale);
+        return;
+    }
+
+    /* draw with scroll offset; gfx clips x<0 on the left automatically */
+    gfx_draw_text(TEXT_X0 - sc->offset, y, text, color, scale);
+    /* black out areas outside the clip zone */
+    gfx_fill_rect(0,      y, TEXT_X0,         h, GFX_BLACK);
+    gfx_fill_rect(TEXT_X1, y, GFX_W - TEXT_X1, h, GFX_BLACK);
+
+    if (sc->pause > 0) {
+        sc->pause--;
+    } else {
+        sc->offset += SCROLL_SPEED;
+        if (sc->offset > text_px - TEXT_MAX_W) {
+            sc->offset = 0;
+            sc->pause  = SCROLL_PAUSE;
+        }
+    }
+}
+
+static void format_time(char *buf, size_t n, uint32_t ms)
+{
+    uint32_t s = ms / 1000;
+    snprintf(buf, n, "%lu:%02lu", (unsigned long)(s / 60), (unsigned long)(s % 60));
+}
+
+/* ---- screen ------------------------------------------------------------ */
+static void np_enter(screen_t *self)
+{
+    (void)self;
+    s_cached_path[0] = '\0';
+    reset_scroll();
+}
+
+static void np_exit(screen_t *self) { (void)self; }
+
+static void handle_input(screen_t *self, ui_event_t ev)
+{
+    (void)self;
+    if (ev == UI_EVENT_BACK) navigator_pop();
+}
+
+static void render(screen_t *self)
+{
+    (void)self;
+
+    player_status_t status = {0};
+    player_get_state(&status);
+
+    /* refresh metadata on track change */
+    const char *path = (status.state != PLAYER_STOPPED) ? status.track.path : NULL;
+    if (path && strncmp(s_cached_path, path, CACHED_PATH_MAX) != 0) {
+        strncpy(s_cached_path, path, CACHED_PATH_MAX - 1);
+        s_cached_path[CACHED_PATH_MAX - 1] = '\0';
+        memset(&s_meta, 0, sizeof s_meta);
+        track_meta_read(path, &s_meta);
+        reset_scroll();
+    } else if (!path) {
+        memset(&s_meta, 0, sizeof s_meta);
+        s_cached_path[0] = '\0';
+    }
+
+    gfx_clear(GFX_BLACK);
+
+    /* navigation hints */
+    gfx_blit_1bpp(NAV_TOP_IX, NAV_TOP_Y, ICON_ARROW_UP_W, ICON_ARROW_UP_H, icon_arrow_up, GFX_WHITE);
+    gfx_draw_text(NAV_TOP_IX + ICON_ARROW_UP_W + NAV_ICON_GAP, NAV_TOP_Y, "OUTPUT SELECTION", GFX_WHITE, 1);
+    gfx_blit_1bpp(NAV_BOT_IX, NAV_BOT_Y, ICON_ARROW_DOWN_W, ICON_ARROW_DOWN_H, icon_arrow_down, GFX_WHITE);
+    gfx_draw_text(NAV_BOT_IX + ICON_ARROW_DOWN_W + NAV_ICON_GAP, NAV_BOT_Y, "PLAYLIST", GFX_WHITE, 1);
+
+    /* track metadata */
+    const char *title  = s_meta.title[0]  ? s_meta.title
+                       : (path ? status.track.name : "---");
+    const char *artist = s_meta.artist;
+    const char *album  = s_meta.album;
+
+    draw_scrolled(TITLE_Y,  title,  2, &s_title_sc,  GFX_WHITE);
+    draw_scrolled(ARTIST_Y, artist, 1, &s_artist_sc, GFX_WHITE);
+    draw_scrolled(ALBUM_Y,  album,  1, &s_album_sc,  GFX_WHITE);
+
+    if (s_meta.rate_hz > 0) {
+        char q[24];
+        snprintf(q, sizeof q, "%lu Hz / %u-bit",
+                 (unsigned long)s_meta.rate_hz, s_meta.bits);
+        int qx = (CONT_W - (int)strlen(q) * GFX_CHAR_W) / 2;
+        gfx_draw_text(qx, QUALITY_Y, q, gfx_rgb(100, 100, 100), 1);
+    }
+
+    /* transport controls */
+    gfx_blit_1bpp(CTRL_PREV_X, CTRL_Y, ICON_PREV_W, ICON_PREV_H, icon_prev, GFX_WHITE);
+    gfx_blit_1bpp(CTRL_PLAY_X, CTRL_Y, ICON_PLAY_W, ICON_PLAY_H, icon_play, GFX_WHITE);
+    gfx_blit_1bpp(CTRL_NEXT_X, CTRL_Y, ICON_NEXT_W, ICON_NEXT_H, icon_next, GFX_WHITE);
+
+    /* progress bar row */
+    gfx_blit_1bpp(PROG_LOOP_X, PROG_ROW_Y, ICON_LOOP_W,    ICON_LOOP_H,    icon_loop,    GFX_WHITE);
+    if (status.total_ms > 0) {
+        int fill_w = (int)((uint64_t)PROG_BAR_W * status.elapsed_ms / status.total_ms);
+        if (fill_w > PROG_BAR_W) fill_w = PROG_BAR_W;
+        if (fill_w > 0) gfx_fill_rect(PROG_BAR_X, PROG_BAR_Y, fill_w, PROG_BAR_H, GFX_WHITE);
+    }
+    gfx_draw_rect(PROG_BAR_X, PROG_BAR_Y, PROG_BAR_W, PROG_BAR_H, GFX_WHITE);
+    gfx_blit_1bpp(SHUF_ICON_X, PROG_ROW_Y, ICON_SHUFFLE_W, ICON_SHUFFLE_H, icon_shuffle, GFX_WHITE);
+
+    /* time display */
+    char t_el[8], t_str[18];
+    format_time(t_el, sizeof t_el, status.elapsed_ms);
+    if (status.total_ms == 0) {
+        snprintf(t_str, sizeof t_str, "%s / ?:??", t_el);
+    } else {
+        char t_tot[8];
+        format_time(t_tot, sizeof t_tot, status.total_ms);
+        snprintf(t_str, sizeof t_str, "%s / %s", t_el, t_tot);
+    }
+    int time_x = (CONT_W - (int)strlen(t_str) * GFX_CHAR_W) / 2;
+    gfx_draw_text(time_x, TIME_Y, t_str, GFX_WHITE, 1);
+
+    /* volume column */
+    gfx_blit_1bpp(VOL_ICON_X, VOL_ICON_Y, ICON_VOLUME_W, ICON_VOLUME_H, icon_volume, GFX_WHITE);
+    int vol_mv = 0;
+    if (volume_read_mv(&vol_mv)) {
+        int pct    = (int)adc_pot_to_avrcp_volume(vol_mv) * 100 / 127;
+        int fill_h = VOL_BAR_H * pct / 100;
+        if (fill_h > VOL_BAR_H) fill_h = VOL_BAR_H;
+        if (fill_h > 0)
+            gfx_fill_rect(VOL_BAR_X, VOL_BAR_Y + (VOL_BAR_H - fill_h), VOL_BAR_W, fill_h, GFX_WHITE);
+    }
+    gfx_draw_rect(VOL_BAR_X,  VOL_BAR_Y,  VOL_BAR_W,     VOL_BAR_H,     GFX_WHITE);
+}
+
+screen_t *now_playing_screen(void)
+{
+    static screen_t s = {
+        .on_enter     = np_enter,
+        .on_exit      = np_exit,
+        .handle_input = handle_input,
+        .render       = render,
+        .refresh_ms   = 250,
+    };
+    return &s;
+}
