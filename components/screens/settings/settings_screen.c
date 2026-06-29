@@ -16,7 +16,7 @@ static void render(screen_t *self)
 {
     (void)self;
     gfx_clear(GFX_BLACK);
-    gfx_draw_text(8, 8, "Settings", GFX_WHITE, 2);
+    gfx_draw_text(8, 16, "Settings", GFX_WHITE, 2);
 }
 
 screen_t *settings_screen(void)

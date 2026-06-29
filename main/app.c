@@ -2,15 +2,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_err.h"
-#include "driver/gpio.h"
-#include "board_pins.h"
 #include "settings.h"
 #include "spi_bus.h"
 #include "i2c_bus.h"
 #include "gpio_expander.h"
 #include "display_oled.h"
 #include "input.h"
+#include "power.h"
+#include "fuel_gauge.h"
+#include "maintenance.h"
 #include "navigator.h"
+#include "status_bar.h"
 #include "root_menu.h"
 #include "gfx.h"
 
@@ -20,13 +22,10 @@ static i2c_master_bus_handle_t s_i2c;
 
 void app_init(void)
 {
-    /* Self-hold power: drive EnableReg (GPIO4) HIGH before anything else.
-       The regulator is only latched on by USB/the power button at boot; if the
-       ESP32 doesn't take over the hold immediately, releasing them cuts power.
-       Preload the output register high, THEN enable the driver, so the pin never
-       drives low (even briefly) on its way up. */
-    gpio_set_level(PIN_REG_EN, 1);
-    gpio_set_direction(PIN_REG_EN, GPIO_MODE_OUTPUT);
+    /* Self-hold power before anything else: take over EnableReg from USB/the power
+       button at boot, or releasing them cuts the rail. (power_self_hold does the
+       glitch-free preload-high-then-drive; see power.c.) */
+    power_self_hold();
 
     /* Bring up NVS first: settings_init() runs nvs_flash_init() (erase-on-corrupt),
        so every NVS consumer (settings, bluetooth) can just nvs_open afterwards. */
@@ -37,6 +36,13 @@ void app_init(void)
        input_init() — otherwise its ISR reads an uninitialized I2C handle. */
     ESP_ERROR_CHECK(i2c_bus_init(&s_i2c));
     ESP_ERROR_CHECK(gpio_expander_init(s_i2c));
+
+    /* Battery: the MAX17260 fuel gauge on the shared I2C bus, then the maintenance
+       task that polls it through power_tick() every 2 s. The gauge and the expander
+       (INOKB) must both be up first -- power_tick() reads both. This is what fills
+       the status bar's battery percentage. */
+    ESP_ERROR_CHECK(fuel_gauge_init(s_i2c));
+    ESP_ERROR_CHECK(maintenance_init());
 }
 
 void app_run(void)
@@ -52,6 +58,7 @@ void app_run(void)
     screen_t *home = root_menu();
     navigator_push(home);
     home->render(home);
+    status_bar_draw();
     gfx_flush();
 
     /* UI task: block on the input queue (no busy-poll = idle CPU between presses),

@@ -1,6 +1,7 @@
 // Screen stack router
 
 #include "navigator.h"
+#include "status_bar.h"
 
 #define NAV_STACK_MAX 8
 
@@ -32,4 +33,5 @@ void navigator_tick(ui_event_t event)
     if (s_depth == 0) return;
     top = s_stack[s_depth - 1];
     if (top->render) top->render(top);
+    status_bar_draw();   /* battery overlay, on top of every screen */
 }

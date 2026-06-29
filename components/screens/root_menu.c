@@ -4,6 +4,7 @@
 #include "stats_screen.h"
 #include "settings_screen.h"
 #include "navigator.h"
+#include "status_bar.h"
 #include "gfx.h"
 #include "icons.h"
 
@@ -14,7 +15,7 @@
    on this passive OLED would light up OFF pixels across the whole line (IR drop on
    the shared common). Unselected rows carry no decoration; the black background and
    interiors keep the count of lit pixels (and so power draw) minimal. */
-#define ROW_H      44                        /* 4 rows * 44 = 176: fills the panel exactly */
+#define ROW_H      40                        /* 4 rows * 40 = 160 fills the panel below the bar (160 + STATUS_BAR_H = 176) */
 #define N_ROWS     4
 #define ICON_SZ    32                        /* all menu icons are 32x32 (see icons.h) */
 #define ICON_X     8
@@ -106,7 +107,7 @@ static void render(screen_t *self)
     gfx_clear(GFX_BLACK);
 
     for (int i = 0; i < N_ROWS; i++) {
-        int y = i * ROW_H;
+        int y = STATUS_BAR_H + i * ROW_H;   /* leave the top bar clear for the status bar */
         gfx_color_t icon_color = (i == s_selected) ? s_accent[i] : GFX_WHITE;
         if (i == s_selected) draw_brackets(y);
         gfx_blit_1bpp(ICON_X, y + ICON_INSET, ICON_SZ, ICON_SZ, s_icons[i], icon_color);

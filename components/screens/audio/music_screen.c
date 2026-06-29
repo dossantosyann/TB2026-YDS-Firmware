@@ -16,7 +16,7 @@ static void render(screen_t *self)
 {
     (void)self;
     gfx_clear(GFX_BLACK);
-    gfx_draw_text(8, 8, "Music", GFX_WHITE, 2);
+    gfx_draw_text(8, 16, "Music", GFX_WHITE, 2);
 }
 
 screen_t *music_screen(void)
