@@ -14,9 +14,11 @@ static const char *TAG = "storage";
 
 /* One contiguous PSRAM block of fixed-size path rows: bounded, O(1) by index, qsort-able. */
 static char (*s_paths)[STORAGE_PATH_MAX];
-static size_t s_count;
-static bool   s_mounted;
-static bool   s_scanned;
+static size_t          s_count;
+static volatile bool   s_mounted;
+static volatile bool   s_scanned;
+static uint64_t        s_total_bytes;
+static uint64_t        s_used_bytes;
 
 /* True when @p name ends in ".mp3" or ".wav" (case-insensitive) — what decoder_open accepts. */
 static bool is_playable(const char *name)
@@ -33,6 +35,52 @@ static int cmp_paths(const void *a, const void *b)
     return strcasecmp((const char *)a, (const char *)b);
 }
 
+/* Recursive scan core: walk @p dir_path, add playable files to s_paths[], recurse into
+   sub-directories. s_count is the shared write cursor across all recursive calls. */
+static esp_err_t scan_recursive(const char *dir_path)
+{
+    DIR *dir = opendir(dir_path);
+    if (!dir) {
+        ESP_LOGW(TAG, "cannot open '%s', skipping", dir_path);
+        return ESP_OK;
+    }
+
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (ent->d_name[0] == '.' &&
+            (ent->d_name[1] == '\0' ||
+             (ent->d_name[1] == '.' && ent->d_name[2] == '\0'))) {
+            continue;
+        }
+
+        char child[STORAGE_PATH_MAX];
+        int n = snprintf(child, sizeof child, "%s/%s", dir_path, ent->d_name);
+        if (n < 0 || n >= (int)sizeof child) {
+            ESP_LOGW(TAG, "path too long, skipping: %s/%s", dir_path, ent->d_name);
+            continue;
+        }
+
+        if (ent->d_type == DT_DIR) {
+            esp_err_t err = scan_recursive(child);
+            if (err != ESP_OK) {
+                closedir(dir);
+                return err;
+            }
+        } else if (is_playable(ent->d_name)) {
+            if (s_count >= STORAGE_MAX_TRACKS) {
+                ESP_LOGE(TAG, "more than %d tracks: index overflow, refusing to truncate",
+                         STORAGE_MAX_TRACKS);
+                closedir(dir);
+                return ESP_ERR_NO_MEM;
+            }
+            memcpy(s_paths[s_count], child, n + 1);
+            s_count++;
+        }
+    }
+    closedir(dir);
+    return ESP_OK;
+}
+
 esp_err_t storage_scan_dir(const char *root)
 {
     if (!s_paths) {
@@ -43,44 +91,22 @@ esp_err_t storage_scan_dir(const char *root)
         }
     }
 
-    DIR *dir = opendir(root);
-    if (!dir) {
-        ESP_LOGE(TAG, "cannot open directory '%s'", root);
-        s_scanned = false;
-        s_count = 0;
-        return ESP_FAIL;
-    }
-
     s_count = 0;
-    struct dirent *ent;
-    while ((ent = readdir(dir)) != NULL) {
-        if (!is_playable(ent->d_name)) {
-            continue;
-        }
-        if (s_count >= STORAGE_MAX_TRACKS) {
-            ESP_LOGE(TAG, "more than %d tracks on the card: index overflow, refusing to truncate",
-                     STORAGE_MAX_TRACKS);
-            closedir(dir);
-            s_count = 0;
-            s_scanned = false;
-            return ESP_ERR_NO_MEM;
-        }
-        int n = snprintf(s_paths[s_count], STORAGE_PATH_MAX, "%s/%s", root, ent->d_name);
-        if (n < 0 || n >= STORAGE_PATH_MAX) {
-            ESP_LOGW(TAG, "path too long, skipping: %s/%s", root, ent->d_name);
-            continue;
-        }
-        s_count++;
+    s_scanned = false;
+
+    esp_err_t err = scan_recursive(root);
+    if (err != ESP_OK) {
+        s_count = 0;
+        return err;
     }
-    closedir(dir);
 
     qsort(s_paths, s_count, sizeof(*s_paths), cmp_paths);
     s_scanned = true;
 
     if (s_count == 0) {
-        ESP_LOGW(TAG, "no playable tracks found in '%s'", root);
+        ESP_LOGW(TAG, "no playable tracks found under '%s'", root);
     } else {
-        ESP_LOGI(TAG, "indexed %u tracks from '%s'", (unsigned)s_count, root);
+        ESP_LOGI(TAG, "indexed %u tracks under '%s'", (unsigned)s_count, root);
     }
     return ESP_OK;
 }
@@ -100,7 +126,14 @@ esp_err_t storage_init(void)
         return err;
     }
     s_mounted = true;
-    return storage_scan_dir(SDCARD_MOUNT_POINT);
+    err = storage_scan_dir(SDCARD_MOUNT_POINT);
+    if (err != ESP_OK) return err;
+    uint64_t total = 0, freeb = 0;
+    if (esp_vfs_fat_info(SDCARD_MOUNT_POINT, &total, &freeb) == ESP_OK) {
+        s_total_bytes = total;
+        s_used_bytes  = total - freeb;
+    }
+    return ESP_OK;
 }
 
 esp_err_t storage_rescan(void)
@@ -109,7 +142,14 @@ esp_err_t storage_rescan(void)
         ESP_LOGE(TAG, "rescan requested but card is not mounted");
         return ESP_ERR_INVALID_STATE;
     }
-    return storage_scan_dir(SDCARD_MOUNT_POINT);
+    esp_err_t err = storage_scan_dir(SDCARD_MOUNT_POINT);
+    if (err != ESP_OK) return err;
+    uint64_t total = 0, freeb = 0;
+    if (esp_vfs_fat_info(SDCARD_MOUNT_POINT, &total, &freeb) == ESP_OK) {
+        s_total_bytes = total;
+        s_used_bytes  = total - freeb;
+    }
+    return ESP_OK;
 }
 
 bool storage_ready(void)
@@ -127,13 +167,8 @@ esp_err_t storage_get_usage(uint64_t *total_bytes, uint64_t *used_bytes)
     if (!s_mounted) {
         return ESP_ERR_INVALID_STATE;
     }
-    uint64_t total = 0, freeb = 0;
-    esp_err_t err = esp_vfs_fat_info(SDCARD_MOUNT_POINT, &total, &freeb);
-    if (err != ESP_OK) {
-        return err;
-    }
-    if (total_bytes) *total_bytes = total;
-    if (used_bytes)  *used_bytes  = total - freeb;
+    if (total_bytes) *total_bytes = s_total_bytes;
+    if (used_bytes)  *used_bytes  = s_used_bytes;
     return ESP_OK;
 }
 

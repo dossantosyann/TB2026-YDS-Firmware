@@ -125,8 +125,13 @@ static void render_storage(screen_t *self)
     (void)self;
     page_begin("Storage");
 
-    emitf(GFX_WHITE, "Card:    %s", sdcard_present() ? "present" : "absent");
-    emitf(GFX_WHITE, "Mounted: %s", storage_ready() ? "yes" : "no");
+    bool present = sdcard_present();
+    bool ready   = storage_ready();
+
+    emitf(GFX_WHITE, "Card:    %s", present ? "present" : "absent");
+    emitf(GFX_WHITE, "Mounted: %s", ready ? "yes" : present ? "scanning..." : "no");
+
+    if (!ready) return;
 
     uint64_t tot = 0, used = 0;
     if (storage_get_usage(&tot, &used) == ESP_OK) {

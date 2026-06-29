@@ -11,14 +11,26 @@
 #include "power.h"
 #include "fuel_gauge.h"
 #include "maintenance.h"
+#include "storage.h"
 #include "navigator.h"
 #include "status_bar.h"
 #include "root_menu.h"
 #include "gfx.h"
+#include "esp_log.h"
 
 /* Shared I2C master bus, owned here and handed to every device on it (expander now;
    fuel gauge / DAC as those services are wired in). */
 static i2c_master_bus_handle_t s_i2c;
+
+static void storage_scan_task(void *arg)
+{
+    (void)arg;
+    esp_err_t err = storage_init();
+    if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW("app", "storage_init: %s", esp_err_to_name(err));
+    }
+    vTaskDelete(NULL);
+}
 
 void app_init(void)
 {
@@ -43,6 +55,7 @@ void app_init(void)
        the status bar's battery percentage. */
     ESP_ERROR_CHECK(fuel_gauge_init(s_i2c));
     ESP_ERROR_CHECK(maintenance_init());
+
 }
 
 void app_run(void)
@@ -53,6 +66,11 @@ void app_run(void)
     ESP_ERROR_CHECK(spi_bus_display_init(&disp_spi));
     ESP_ERROR_CHECK(display_oled_init(disp_spi));
     ESP_ERROR_CHECK(input_init());
+
+    /* SD scan in background so the UI is responsive while the card is enumerated.
+       Priority 1 (just above idle) keeps it below the UI task. Stack covers the
+       recursive scan (3 levels × 320 B frame) with margin. */
+    xTaskCreate(storage_scan_task, "storage_scan", 4096, NULL, 1, NULL);
 
     /* Push the home screen and paint it once (navigator_push doesn't render). */
     screen_t *home = root_menu();
