@@ -229,10 +229,12 @@ esp_err_t track_meta_read(const char *path, track_meta_t *out)
 {
     if (!path || !out) return ESP_ERR_INVALID_ARG;
     memset(out, 0, sizeof *out);
-    basename_no_ext(path, out->title, TRACK_META_STR_MAX);   /* title fallback if untagged */
 
     FILE *f = fopen(path, "rb");
-    if (!f) return ESP_ERR_NOT_FOUND;
+    if (!f) {
+        basename_no_ext(path, out->title, TRACK_META_STR_MAX);
+        return ESP_ERR_NOT_FOUND;
+    }
 
     uint8_t magic[12] = {0};
     size_t n = fread(magic, 1, sizeof magic, f);
@@ -251,6 +253,9 @@ esp_err_t track_meta_read(const char *path, track_meta_t *out)
         err = ESP_ERR_NOT_SUPPORTED;
     }
     fclose(f);
+
+    if (out->title[0] == '\0')
+        basename_no_ext(path, out->title, TRACK_META_STR_MAX);
 
     if (err != ESP_OK) ESP_LOGW(TAG, "meta read failed for %s (%d)", path, err);
     return err;
