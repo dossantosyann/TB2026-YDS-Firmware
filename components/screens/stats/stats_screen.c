@@ -118,7 +118,6 @@ static void render_battery(screen_t *self)
     power_state_t p;
     power_get_state(&p);
     emitf(GFX_WHITE, "Charging:    %s", p.charging ? "yes" : "no");
-    emitf(GFX_WHITE, "External:    %s", p.external_power ? "yes" : "no");
 }
 
 static void render_storage(screen_t *self)
