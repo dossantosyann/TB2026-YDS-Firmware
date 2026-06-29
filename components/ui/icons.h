@@ -20,3 +20,8 @@ extern const uint8_t icon_settings[];
 #define ICON_STORAGE_W 32
 #define ICON_STORAGE_H 32
 extern const uint8_t icon_storage[];
+
+/* volume.png: 32x32, 1 bpp, MSB-first. */
+#define ICON_VOLUME_W 32
+#define ICON_VOLUME_H 32
+extern const uint8_t icon_volume[];
