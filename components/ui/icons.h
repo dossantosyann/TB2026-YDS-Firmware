@@ -40,3 +40,13 @@ extern const uint8_t icon_prev[];
 #define ICON_NEXT_W 16
 #define ICON_NEXT_H 16
 extern const uint8_t icon_next[];
+
+/* volume.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_SHUFFLE_W 16
+#define ICON_SHUFFLE_H 16
+extern const uint8_t icon_shuffle[];
+
+/* volume.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_LOOP_W 16
+#define ICON_LOOP_H 16
+extern const uint8_t icon_loop[];
