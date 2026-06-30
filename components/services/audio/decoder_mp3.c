@@ -54,21 +54,44 @@ static esp_err_t mp3_open(FILE *f, decoder_format_t *fmt)
     if (!s_in || !s_dec) { mp3_close(); return ESP_ERR_NO_MEM; }
     s_read_ptr = s_in;
 
-    /* Skip anything before the first frame sync (ID3 tag, junk). */
     mp3_refill();
-    int off;
-    while ((off = MP3FindSyncWord(s_read_ptr, s_in_len)) < 0) {
-        s_in_len = 0;                       /* nothing useful here */
-        if (mp3_refill() == 0) { mp3_close(); return ESP_FAIL; }   /* no frame in file */
-    }
-    s_read_ptr += off;
-    s_in_len   -= off;
 
-    MP3FrameInfo fi;
-    if (MP3GetNextFrameInfo(s_dec, &fi, s_read_ptr) != ERR_MP3_NONE) {
-        mp3_close();
-        return ESP_FAIL;
+    /* Skip an ID3v2 tag by its declared size. Its payload (embedded album art is
+       full of 0xFF bytes) would otherwise trip MP3FindSyncWord on a false sync.
+       The tag can dwarf the input buffer, so seek past it in the file. Size is
+       four synchsafe bytes (7 bits each); a footer flag adds another 10 bytes. */
+    if (s_in_len >= 10 && !memcmp(s_in, "ID3", 3)) {
+        const uint8_t *h = s_in;
+        long tag = 10 + (((long)(h[6] & 0x7F) << 21) | ((long)(h[7] & 0x7F) << 14) |
+                         ((long)(h[8] & 0x7F) << 7)  |  (long)(h[9] & 0x7F));
+        if (h[5] & 0x10) tag += 10;              /* footer present */
+        fseek(s_f, tag, SEEK_SET);
+        s_read_ptr = s_in;
+        s_in_len = 0;
+        mp3_refill();
     }
+
+    /* Find the first real frame. A 0xFF 0xEx pattern can still occur in trailing
+       junk, so confirm each candidate sync with MP3GetNextFrameInfo and step past
+       the false ones rather than trusting the first hit. */
+    MP3FrameInfo fi;
+    for (;;) {
+        int off = MP3FindSyncWord(s_read_ptr, s_in_len);
+        if (off >= 0 && s_in_len - off >= 4) {
+            s_read_ptr += off;
+            s_in_len   -= off;
+            if (MP3GetNextFrameInfo(s_dec, &fi, s_read_ptr) == ERR_MP3_NONE) break;
+            s_read_ptr += 1;                     /* false sync: step over the 0xFF */
+            s_in_len   -= 1;
+            continue;
+        }
+        if (off < 0) { s_in_len = 0; s_read_ptr = s_in; }  /* whole buffer was junk */
+        if (mp3_refill() == 0) {
+            ESP_LOGE(TAG, "no valid MP3 frame found (empty or not an MP3 file)");
+            mp3_close(); return ESP_FAIL;
+        }
+    }
+
     fmt->rate_hz  = (uint32_t)fi.samprate;
     fmt->channels = 2;      /* we always emit stereo */
     fmt->bits     = 16;     /* helix outputs int16 */

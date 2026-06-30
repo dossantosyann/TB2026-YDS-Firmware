@@ -47,11 +47,7 @@ static esp_err_t scan_recursive(const char *dir_path)
 
     struct dirent *ent;
     while ((ent = readdir(dir)) != NULL) {
-        if (ent->d_name[0] == '.' &&
-            (ent->d_name[1] == '\0' ||
-             (ent->d_name[1] == '.' && ent->d_name[2] == '\0'))) {
-            continue;
-        }
+        if (ent->d_name[0] == '.') continue;  /* skip ., .., hidden dirs, ._AppleDouble files */
 
         char child[STORAGE_PATH_MAX];
         int n = snprintf(child, sizeof child, "%s/%s", dir_path, ent->d_name);

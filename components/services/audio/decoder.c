@@ -62,6 +62,7 @@ esp_err_t decoder_open(const char *path)
 
     esp_err_t err = be->open(f, &s_fmt);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "backend open failed (%s): %s", esp_err_to_name(err), path);
         be->close();
         fclose(f);
         return err;
