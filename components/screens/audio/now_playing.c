@@ -4,6 +4,7 @@
 #include "icons.h"
 #include "status_bar.h"
 #include "player.h"
+#include "playlist.h"
 #include "track_meta.h"
 #include "volume.h"
 #include "adc.h"
@@ -64,14 +65,40 @@
 
 #define CACHED_PATH_MAX 128
 
+/* ---- ctrl cursor ------------------------------------------------------- */
+/* 0=loop, 1=prev, 2=play/pause, 3=next, 4=shuffle */
+typedef struct { int x, y; } ctrl_xy_t;
+static const ctrl_xy_t k_ctrl[5] = {
+    {PROG_LOOP_X, PROG_ROW_Y},
+    {CTRL_PREV_X, CTRL_Y},
+    {CTRL_PLAY_X, CTRL_Y},
+    {CTRL_NEXT_X, CTRL_Y},
+    {SHUF_ICON_X, PROG_ROW_Y},
+};
+
 /* ---- state ------------------------------------------------------------- */
 typedef struct { int32_t offset; int32_t pause; } scroll_t;
 
 static track_meta_t  s_meta;
 static char          s_cached_path[CACHED_PATH_MAX];
 static scroll_t      s_title_sc, s_artist_sc, s_album_sc;
+static int           s_cursor;
 
 /* ---- helpers ----------------------------------------------------------- */
+/* Draws 4 corner brackets (arm=3px) around the rect (x,y,w,h). */
+static void draw_corners(int x, int y, int w, int h, gfx_color_t col)
+{
+    int arm = 3;
+    gfx_fill_rect(x,         y,             arm, 1,   col);
+    gfx_fill_rect(x,         y,             1,   arm,  col);
+    gfx_fill_rect(x + w - arm, y,           arm, 1,   col);
+    gfx_fill_rect(x + w - 1,   y,           1,   arm,  col);
+    gfx_fill_rect(x,           y + h - 1,   arm, 1,   col);
+    gfx_fill_rect(x,           y + h - arm, 1,   arm,  col);
+    gfx_fill_rect(x + w - arm, y + h - 1,   arm, 1,   col);
+    gfx_fill_rect(x + w - 1,   y + h - arm, 1,   arm,  col);
+}
+
 static void reset_scroll(void)
 {
     s_title_sc.offset  = 0; s_title_sc.pause  = SCROLL_PAUSE;
@@ -121,14 +148,46 @@ static void np_enter(screen_t *self)
     (void)self;
     s_cached_path[0] = '\0';
     reset_scroll();
+    s_cursor = 2;
 }
 
 static void np_exit(screen_t *self) { (void)self; }
 
+static void handle_select(void)
+{
+    player_status_t status = {0};
+    player_get_state(&status);
+
+    switch (s_cursor) {
+    case 0: {
+        playlist_repeat_t r = playlist_get_repeat();
+        if      (r == PLAYLIST_REPEAT_OFF) playlist_set_repeat(PLAYLIST_REPEAT_ALL);
+        else if (r == PLAYLIST_REPEAT_ALL) playlist_set_repeat(PLAYLIST_REPEAT_ONE);
+        else                               playlist_set_repeat(PLAYLIST_REPEAT_OFF);
+        break;
+    }
+    case 1: player_prev(); break;
+    case 2:
+        if      (status.state == PLAYER_PLAYING) player_pause();
+        else if (status.state == PLAYER_PAUSED)  player_resume();
+        break;
+    case 3: player_next(); break;
+    case 4: playlist_set_shuffle(!playlist_get_shuffle()); break;
+    }
+}
+
 static void handle_input(screen_t *self, ui_event_t ev)
 {
     (void)self;
-    if (ev == UI_EVENT_BACK) navigator_pop();
+    switch (ev) {
+    case UI_EVENT_BACK:   navigator_pop();                        break;
+    case UI_EVENT_LEFT:   s_cursor = (s_cursor - 1 + 5) % 5;    break;
+    case UI_EVENT_RIGHT:  s_cursor = (s_cursor + 1) % 5;         break;
+    case UI_EVENT_SELECT: handle_select();                        break;
+    case UI_EVENT_UP:     /* output_select: not yet implemented */ break;
+    case UI_EVENT_DOWN:   /* playlist: not yet implemented */      break;
+    default: break;
+    }
 }
 
 static void render(screen_t *self)
@@ -178,19 +237,30 @@ static void render(screen_t *self)
     }
 
     /* transport controls */
-    gfx_blit_1bpp(CTRL_PREV_X, CTRL_Y, ICON_PREV_W, ICON_PREV_H, icon_prev, GFX_WHITE);
-    gfx_blit_1bpp(CTRL_PLAY_X, CTRL_Y, ICON_PLAY_W, ICON_PLAY_H, icon_play, GFX_WHITE);
-    gfx_blit_1bpp(CTRL_NEXT_X, CTRL_Y, ICON_NEXT_W, ICON_NEXT_H, icon_next, GFX_WHITE);
+    playlist_repeat_t repeat  = playlist_get_repeat();
+    bool              shuffle = playlist_get_shuffle();
+    gfx_color_t loop_col = (repeat  == PLAYLIST_REPEAT_OFF) ? gfx_rgb(60, 60, 60) : GFX_WHITE;
+    gfx_color_t shuf_col = shuffle ? GFX_WHITE : gfx_rgb(60, 60, 60);
+    const uint8_t *play_icon = (status.state == PLAYER_PLAYING) ? icon_pause : icon_play;
+
+    gfx_blit_1bpp(CTRL_PREV_X, CTRL_Y, ICON_PREV_W, ICON_PREV_H, icon_prev,  GFX_WHITE);
+    gfx_blit_1bpp(CTRL_PLAY_X, CTRL_Y, ICON_PLAY_W, ICON_PLAY_H, play_icon,  GFX_WHITE);
+    gfx_blit_1bpp(CTRL_NEXT_X, CTRL_Y, ICON_NEXT_W, ICON_NEXT_H, icon_next,  GFX_WHITE);
 
     /* progress bar row */
-    gfx_blit_1bpp(PROG_LOOP_X, PROG_ROW_Y, ICON_LOOP_W,    ICON_LOOP_H,    icon_loop,    GFX_WHITE);
+    gfx_blit_1bpp(PROG_LOOP_X, PROG_ROW_Y, ICON_LOOP_W,    ICON_LOOP_H,    icon_loop,    loop_col);
+    if (repeat == PLAYLIST_REPEAT_ONE)
+        gfx_fill_rect(PROG_LOOP_X, PROG_ROW_Y + ICON_LOOP_H + 1, ICON_LOOP_W, 1, GFX_WHITE);
     if (status.total_ms > 0) {
         int fill_w = (int)((uint64_t)PROG_BAR_W * status.elapsed_ms / status.total_ms);
         if (fill_w > PROG_BAR_W) fill_w = PROG_BAR_W;
         if (fill_w > 0) gfx_fill_rect(PROG_BAR_X, PROG_BAR_Y, fill_w, PROG_BAR_H, GFX_WHITE);
     }
     gfx_draw_rect(PROG_BAR_X, PROG_BAR_Y, PROG_BAR_W, PROG_BAR_H, GFX_WHITE);
-    gfx_blit_1bpp(SHUF_ICON_X, PROG_ROW_Y, ICON_SHUFFLE_W, ICON_SHUFFLE_H, icon_shuffle, GFX_WHITE);
+    gfx_blit_1bpp(SHUF_ICON_X, PROG_ROW_Y, ICON_SHUFFLE_W, ICON_SHUFFLE_H, icon_shuffle, shuf_col);
+
+    /* cursor corners around the selected control (1px padding → 18×18) */
+    draw_corners(k_ctrl[s_cursor].x - 1, k_ctrl[s_cursor].y - 1, 18, 18, GFX_WHITE);
 
     /* time display */
     char t_el[8], t_str[18];
