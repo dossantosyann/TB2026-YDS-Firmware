@@ -118,7 +118,13 @@ static esp_err_t mp3_read(void *pcm, size_t cap_bytes, size_t *got_bytes)
             for (int i = samples - 1; i >= 0; i--) { out[2 * i] = out[2 * i + 1] = out[i]; }
             samples *= 2;
         }
-        *got_bytes = (size_t)samples * sizeof(short);
+        /* Expand int16 -> int32 MSB-justified in place (buffer = 9216 B = 2304 × 4 B).
+           Go from the end so the write destination never clobbers an unread source. */
+        int32_t *out32 = (int32_t *)pcm;
+        for (int i = samples - 1; i >= 0; i--) {
+            out32[i] = (int32_t)out[i] << 16;
+        }
+        *got_bytes = (size_t)samples * sizeof(int32_t);
         return ESP_OK;
     }
 }

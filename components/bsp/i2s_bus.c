@@ -7,7 +7,10 @@
 
 /* Bus comes up here; the decoder retunes via i2s_bus_reconfig() per file. */
 #define I2S_DEFAULT_RATE  (44100)
-#define I2S_DEFAULT_BITS  (I2S_DATA_BIT_WIDTH_16BIT)
+/* Always 32-bit data to match the fixed 32-bit slot: the decoders expand every sample
+   to a 32-bit MSB-justified word before writing, so the DMA copies straight through
+   with no implicit expansion that changed behaviour in IDF v6. */
+#define I2S_DEFAULT_BITS  (I2S_DATA_BIT_WIDTH_32BIT)
 
 /* Fill a std config for a given rate/width. APLL: the default PLL can't hit the
    44.1 kHz family or 192 kHz exactly (audible clock error); it draws a little more
@@ -46,9 +49,8 @@ esp_err_t i2s_bus_init(i2s_chan_handle_t *out_tx_handle)
 
 esp_err_t i2s_bus_reconfig(i2s_chan_handle_t tx, uint32_t rate_hz, uint8_t bits)
 {
-    const i2s_data_bit_width_t dw =
-        (bits >= 24) ? I2S_DATA_BIT_WIDTH_24BIT : I2S_DATA_BIT_WIDTH_16BIT;
-    const i2s_std_config_t cfg = std_config(rate_hz, dw);
+    (void)bits;   /* decoders always emit 32-bit samples; data_bit_width stays 32 */
+    const i2s_std_config_t cfg = std_config(rate_hz, I2S_DATA_BIT_WIDTH_32BIT);
 
     esp_err_t err = i2s_channel_disable(tx);    // must be in READY state to retune
     if (err != ESP_OK) return err;

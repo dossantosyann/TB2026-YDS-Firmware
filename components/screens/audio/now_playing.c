@@ -208,13 +208,12 @@ static void render(screen_t *self)
     /* volume column */
     gfx_blit_1bpp(VOL_ICON_X, VOL_ICON_Y, ICON_VOLUME_W, ICON_VOLUME_H, icon_volume, GFX_WHITE);
     int vol_mv = 0;
-    if (volume_read_mv(&vol_mv)) {
-        int pct    = (int)adc_pot_to_avrcp_volume(vol_mv) * 100 / 127;
-        int fill_h = VOL_BAR_H * pct / 100;
-        if (fill_h > VOL_BAR_H) fill_h = VOL_BAR_H;
-        if (fill_h > 0)
-            gfx_fill_rect(VOL_BAR_X, VOL_BAR_Y + (VOL_BAR_H - fill_h), VOL_BAR_W, fill_h, GFX_WHITE);
-    }
+    volume_poll(&vol_mv, NULL);
+    int pct    = (int)adc_pot_to_avrcp_volume(vol_mv) * 100 / 127;
+    int fill_h = VOL_BAR_H * pct / 100;
+    if (fill_h > VOL_BAR_H) fill_h = VOL_BAR_H;
+    if (fill_h > 0)
+        gfx_fill_rect(VOL_BAR_X, VOL_BAR_Y + (VOL_BAR_H - fill_h), VOL_BAR_W, fill_h, GFX_WHITE);
     gfx_draw_rect(VOL_BAR_X,  VOL_BAR_Y,  VOL_BAR_W,     VOL_BAR_H,     GFX_WHITE);
 }
 

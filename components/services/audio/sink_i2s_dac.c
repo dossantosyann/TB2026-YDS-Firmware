@@ -6,6 +6,7 @@
 #include "i2s_bus.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_log.h"
 
 static i2s_chan_handle_t s_tx;   /* the sink owns the I2S bus handle */
 
@@ -28,6 +29,8 @@ esp_err_t sink_i2s_dac_init(void)
 
 static esp_err_t i2s_start(uint32_t rate_hz, uint8_t bits, uint8_t channels)
 {
+    ESP_LOGI("i2s", "start: %lu Hz %u-bit", rate_hz, bits);
+
     (void)channels;   /* the wired path is fixed stereo (32-bit slots) */
 
     esp_err_t err = i2s_bus_reconfig(s_tx, rate_hz, bits);

@@ -5,21 +5,25 @@
  */
 #include "maintenance.h"
 #include "power.h"
+#include "volume.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #define MAINT_TASK_PRIO   3      /* below input (5) and the audio task (22) */
 #define MAINT_TASK_STACK  3072   /* fuel_gauge_read does a burst of I2C reads */
-#define MAINT_PERIOD_MS   2000   /* battery state changes slowly */
+#define MAINT_VOL_MS      100    /* volume knob poll rate */
+#define MAINT_PWR_DIV     20    /* power_tick every 2000 ms */
 
 static TaskHandle_t s_task;
 
 static void maintenance_task(void *arg)
 {
     (void)arg;
-    const TickType_t period = pdMS_TO_TICKS(MAINT_PERIOD_MS);
+    const TickType_t period = pdMS_TO_TICKS(MAINT_VOL_MS);
+    int pwr = 0;
     for (;;) {
-        power_tick();
+        volume_poll(NULL, NULL);
+        if (++pwr >= MAINT_PWR_DIV) { power_tick(); pwr = 0; }
         vTaskDelay(period);
     }
 }

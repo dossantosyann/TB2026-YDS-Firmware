@@ -42,8 +42,8 @@ typedef struct {
 } pipe_cmd_t;
 
 static QueueHandle_t s_cmd_q;
-static int16_t       s_chunk[PIPE_CHUNK_FRAMES * 2];   /* interleaved stereo tone buffer */
-static uint8_t       s_file_buf[DECODER_READ_BUF_BYTES]; /* decode chunk buffer (16/24-bit) */
+static int32_t       s_chunk[PIPE_CHUNK_FRAMES * 2];   /* interleaved stereo tone buffer, 32-bit */
+static uint8_t       s_file_buf[DECODER_READ_BUF_BYTES]; /* decode chunk buffer (32-bit stereo) */
 static const audio_sink_t *s_sink;                     /* output backend; defaults to the wired DAC */
 static void (*s_end_cb)(pipeline_end_reason_t);        /* track-end notify (player) */
 
@@ -87,8 +87,8 @@ static void run_tone(uint32_t freq_hz)
     for (;;) {
         for (int f = 0; f < PIPE_CHUNK_FRAMES; f++) {
             int16_t s = table[phase];
-            s_chunk[2 * f]     = s;   /* L */
-            s_chunk[2 * f + 1] = s;   /* R */
+            s_chunk[2 * f]     = (int32_t)s << 16;   /* L, 32-bit MSB-justified */
+            s_chunk[2 * f + 1] = (int32_t)s << 16;   /* R */
             if (++phase >= period) phase = 0;
         }
         size_t written;
@@ -120,9 +120,15 @@ static void run_file(const char *path)
 
     decoder_format_t fmt;
     const audio_sink_t *sink = s_sink;
-    if (decoder_format(&fmt) != ESP_OK ||
-        sink->start(fmt.rate_hz, fmt.bits, fmt.channels) != ESP_OK) {
-        ESP_LOGE(TAG, "file: format/start failed");
+    if (decoder_format(&fmt) != ESP_OK) {
+        ESP_LOGE(TAG, "file: format failed");
+        decoder_close();
+        if (s_end_cb) s_end_cb(PIPE_END_ERROR);
+        return;
+    }
+    ESP_LOGI(TAG, "file: %lu Hz %u-bit %u-ch", fmt.rate_hz, fmt.bits, fmt.channels);
+    if (sink->start(fmt.rate_hz, fmt.bits, fmt.channels) != ESP_OK) {
+        ESP_LOGE(TAG, "file: sink start failed");
         decoder_close();
         if (s_end_cb) s_end_cb(PIPE_END_ERROR);
         return;
@@ -131,7 +137,7 @@ static void run_file(const char *path)
     pipeline_end_reason_t reason = PIPE_END_EOF;   /* default: ran to end of file */
     bool notify = true;                            /* a user CMD_STOP ends silently */
     bool sink_on = true;
-    const uint32_t out_frame = (fmt.bits == 24) ? 8 : 4;  /* output bytes per stereo frame */
+    const uint32_t out_frame = 8;  /* 32-bit stereo: 4 B/sample × 2 ch */
     s_pos_frames   = 0;
     s_pos_total_ms = fmt.duration_ms;
     s_pos_rate     = fmt.rate_hz;                  /* set last: non-zero marks position valid */

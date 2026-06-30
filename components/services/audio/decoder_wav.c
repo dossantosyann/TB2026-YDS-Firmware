@@ -103,7 +103,7 @@ static esp_err_t wav_read(void *pcm, size_t cap_bytes, size_t *got_bytes)
     if (cap_bytes > DECODER_READ_BUF_BYTES) cap_bytes = DECODER_READ_BUF_BYTES;
 
     const size_t src_frame = (size_t)(s_bits / 8) * s_channels;  /* bytes per source frame */
-    const size_t out_frame = (s_bits == 24) ? 8 : 4;            /* always stereo out */
+    const size_t out_frame = 8;            /* always 32-bit stereo out (4 B/sample × 2 ch) */
 
     size_t max_frames = cap_bytes / out_frame;
     size_t avail      = s_data_remaining / src_frame;
@@ -116,12 +116,17 @@ static esp_err_t wav_read(void *pcm, size_t cap_bytes, size_t *got_bytes)
     s_data_remaining -= (uint32_t)(frames * src_frame);
 
     if (s_bits == 16) {
+        /* Expand each int16 sample to a 32-bit MSB-justified word so the I2S DMA slot
+           (always 32-bit) receives the sample in the correct bit position. */
         const int16_t *in = (const int16_t *)s_temp;
-        int16_t *out = (int16_t *)pcm;
+        int32_t *out = (int32_t *)pcm;
         if (s_channels == 2) {
-            memcpy(out, in, frames * 4);
+            for (size_t i = 0; i < frames * 2; i++) { out[i] = (int32_t)in[i] << 16; }
         } else {
-            for (size_t i = 0; i < frames; i++) { out[2 * i] = out[2 * i + 1] = in[i]; }
+            for (size_t i = 0; i < frames; i++) {
+                int32_t s = (int32_t)in[i] << 16;
+                out[2 * i] = out[2 * i + 1] = s;
+            }
         }
     } else {  /* 24-bit: packed 3 bytes [b0,b1,b2] -> 32-bit word [0,b0,b1,b2] (high 24 bits) */
         const uint8_t *in = s_temp;
