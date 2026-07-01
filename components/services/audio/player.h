@@ -61,16 +61,26 @@ esp_err_t player_init(void);
  * point for both manual selection and a future automatic BT connect/disconnect switch.
  *
  * Bluetooth is referenced only on this path, so a build without BT still links. Switching to
- * VOLUME_OUT_BT is refused while the speaker has not acknowledged the volume (never blast):
- * the current output is left untouched. VOLUME_OUT_NONE is a valid software mute that cuts the
- * active output.
+ * VOLUME_OUT_BT primes the speaker's volume and, if a stream is live, holds it until the speaker
+ * acknowledges that volume before streaming (never blast) -- the switch itself succeeds and
+ * player_poll() completes the deferred start. It is refused only when no speaker is connected.
+ * VOLUME_OUT_NONE is a valid software mute that cuts the active output.
  *
  * @param out  VOLUME_OUT_DAC (jack), VOLUME_OUT_BT (speaker), or VOLUME_OUT_NONE (mute).
- * @return ESP_OK; ESP_ERR_INVALID_STATE if @p out is Bluetooth and the speaker has not yet
- *         acknowledged the volume; ESP_ERR_INVALID_ARG for any other value; otherwise the
- *         pipeline error if a live re-route fails.
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if @p out is Bluetooth and no speaker is connected;
+ *         ESP_ERR_INVALID_ARG for any other value; otherwise the pipeline error if a live
+ *         re-route fails.
  */
 esp_err_t player_set_output(volume_output_t out);
+
+/**
+ * @brief Complete a deferred Bluetooth start once the speaker acknowledges the volume.
+ *
+ * Call periodically from the maintenance loop (after volume_poll()). A switch/play to a
+ * Bluetooth speaker holds the stream until the volume is acknowledged (never blast); this drives
+ * that held start to completion. A no-op when nothing is pending.
+ */
+void player_poll(void);
 
 /**
  * @brief Play the storage track at @p index (stops any current stream first).

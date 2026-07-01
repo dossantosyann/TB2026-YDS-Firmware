@@ -1,5 +1,6 @@
 #include "now_playing.h"
 #include "playlist_browser.h"
+#include "output_select.h"
 #include "navigator.h"
 #include "gfx.h"
 #include "icons.h"
@@ -185,7 +186,7 @@ static void handle_input(screen_t *self, ui_event_t ev)
     case UI_EVENT_LEFT:   s_cursor = (s_cursor - 1 + 5) % 5;    break;
     case UI_EVENT_RIGHT:  s_cursor = (s_cursor + 1) % 5;         break;
     case UI_EVENT_SELECT: handle_select();                        break;
-    case UI_EVENT_UP:     /* output_select: not yet implemented */ break;
+    case UI_EVENT_UP:     navigator_push(output_select_screen());   break;
     case UI_EVENT_DOWN:   navigator_push(playlist_browser_screen());  break;
     default: break;
     }

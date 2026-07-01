@@ -16,8 +16,12 @@ static const char *TAG = "player";
 static player_state_t  s_state  = PLAYER_STOPPED;
 static volume_output_t s_output = VOLUME_OUT_DAC;
 
+/* A Bluetooth (re)start held until the speaker confirms the volume we pushed (never blast).
+   player_poll(), run from the maintenance loop, completes it once bluetooth_volume_acked(). */
+static volatile bool s_bt_pending;
+
 /* True while the active output is Bluetooth and the speaker has not confirmed the volume:
-   streaming then would risk a blast, so playback is refused until the ack lands. */
+   streaming then would risk a blast, so the stream is held (not refused) until the ack lands. */
 static bool bt_volume_unsafe(void)
 {
     return s_output == VOLUME_OUT_BT && !bluetooth_volume_acked();
@@ -28,10 +32,14 @@ static bool bt_volume_unsafe(void)
 static esp_err_t start_current(void)
 {
     if (bt_volume_unsafe()) {
-        ESP_LOGW(TAG, "BT volume not acknowledged yet; not streaming");
+        /* Hold the stream until the speaker acks the volume we just primed; player_poll()
+           resumes it on the ack. Returning OK: the switch/play succeeded, sound is imminent. */
+        s_bt_pending = true;
         s_state = PLAYER_STOPPED;
-        return ESP_ERR_INVALID_STATE;
+        ESP_LOGI(TAG, "BT volume pending; stream deferred until ack");
+        return ESP_OK;
     }
+    s_bt_pending = false;
     playlist_track_t t;
     esp_err_t err = playlist_current(&t);
     if (err == ESP_OK) err = pipeline_play_file(t.path);
@@ -57,7 +65,10 @@ static void on_track_end(pipeline_end_reason_t reason)
         s_state = PLAYER_STOPPED;
         return;
     }
-    if (bt_volume_unsafe() || pipeline_play_file(t.path) != ESP_OK) {
+    if (bt_volume_unsafe()) {           /* volume un-acked (e.g. a knob turn): defer, don't stop */
+        s_bt_pending = true;
+        s_state = PLAYER_STOPPED;
+    } else if (pipeline_play_file(t.path) != ESP_OK) {
         s_state = PLAYER_STOPPED;
     }
 }
@@ -82,17 +93,17 @@ esp_err_t player_set_output(volume_output_t out)
     default:              return ESP_ERR_INVALID_ARG;
     }
 
-    /* Commit the target so the existing safety gate sees it, then refuse a Bluetooth switch the
-       link cannot make safe (no AVRCP, or the volume not yet acked): never blast the speaker, and
-       never tear the current output down for one we cannot actually stream to. The future auto
-       switch shares this path, so it inherits the same guard. */
-    volume_output_t prev = s_output;
-    s_output = out;
-    if (bt_volume_unsafe()) {
-        s_output = prev;
-        ESP_LOGW(TAG, "BT volume not acknowledged; output unchanged");
+    /* A Bluetooth switch needs a speaker to route to; refuse only when none is connected. We do
+       NOT refuse merely because the volume is not acked yet: routing to BT re-applies the knob
+       (volume_set_output below), which primes the speaker's volume, and start_current() then
+       holds the actual stream until the ack lands (never blast). Checking the ack before priming
+       would deadlock -- the ack can only arrive after we have sent a volume. */
+    if (out == VOLUME_OUT_BT && !bluetooth_is_connected()) {
+        ESP_LOGW(TAG, "no Bluetooth speaker connected; output unchanged");
         return ESP_ERR_INVALID_STATE;
     }
+    if (out != VOLUME_OUT_BT) s_bt_pending = false;   /* leaving BT: drop any deferred start */
+    s_output = out;
 
     /* Re-route a live stream onto the new sink right away so the swap is audible mid-track.
        Position-exact resume is out of scope (the decoder has no seek-on-open): the current track
@@ -139,9 +150,17 @@ esp_err_t player_resume(void)
 
 esp_err_t player_stop(void)
 {
+    s_bt_pending = false;
     pipeline_stop();
     s_state = PLAYER_STOPPED;
     return ESP_OK;
+}
+
+void player_poll(void)
+{
+    /* Complete a Bluetooth start that was held for the volume ack (see start_current). Runs on
+       the maintenance loop, right after volume_poll() has had the chance to push the volume. */
+    if (s_bt_pending && bluetooth_volume_acked()) start_current();
 }
 
 esp_err_t player_next(void)

@@ -6,6 +6,7 @@
 #include "maintenance.h"
 #include "power.h"
 #include "volume.h"
+#include "player.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -23,6 +24,7 @@ static void maintenance_task(void *arg)
     int pwr = 0;
     for (;;) {
         volume_poll(NULL, NULL);
+        player_poll();
         if (++pwr >= MAINT_PWR_DIV) { power_tick(); pwr = 0; }
         vTaskDelay(period);
     }
