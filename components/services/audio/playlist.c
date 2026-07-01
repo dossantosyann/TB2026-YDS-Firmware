@@ -142,6 +142,83 @@ esp_err_t playlist_select(size_t index, playlist_track_t *out)
     return fill_current(out);
 }
 
+/* ---- queue view/edit --------------------------------------------------- */
+/* Row r maps to play order position s_pos + r (row 0 = current track). Edits stay strictly
+   above s_pos (upcoming region), so the current track and its playback are never disturbed. */
+
+size_t playlist_queue_len(void)
+{
+    if (!storage_ready() || s_count == 0) {
+        return 0;
+    }
+    return s_count - s_pos;
+}
+
+esp_err_t playlist_queue_at(size_t row, playlist_track_t *out)
+{
+    if (!storage_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    size_t pos = s_pos + row;
+    if (s_count == 0 || pos >= s_count) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (out) {
+        size_t idx = order[pos];
+        out->index = idx;
+        out->path  = storage_track_path(idx);
+        out->name  = storage_track_name(idx);
+    }
+    return ESP_OK;
+}
+
+esp_err_t playlist_queue_move_up(size_t row)
+{
+    if (!storage_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    /* row < 2 would move the current track or push a track above it. */
+    if (row < 2 || s_pos + row >= s_count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    size_t p = s_pos + row;
+    uint16_t t = order[p];
+    order[p] = order[p - 1];
+    order[p - 1] = t;
+    return ESP_OK;
+}
+
+esp_err_t playlist_queue_move_down(size_t row)
+{
+    if (!storage_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (row < 1 || s_pos + row + 1 >= s_count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    size_t p = s_pos + row;
+    uint16_t t = order[p];
+    order[p] = order[p + 1];
+    order[p + 1] = t;
+    return ESP_OK;
+}
+
+esp_err_t playlist_queue_remove(size_t row)
+{
+    if (!storage_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (row < 1 || s_pos + row >= s_count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    size_t p = s_pos + row;
+    for (size_t i = p; i + 1 < s_count; i++) {
+        order[i] = order[i + 1];
+    }
+    s_count--;
+    return ESP_OK;
+}
+
 void playlist_set_repeat(playlist_repeat_t mode)
 {
     s_repeat = mode;

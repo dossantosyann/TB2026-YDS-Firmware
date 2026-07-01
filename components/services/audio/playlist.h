@@ -114,4 +114,54 @@ void playlist_set_shuffle(bool on);
 /** @brief Whether shuffle is on. */
 bool playlist_get_shuffle(void);
 
+/* ---- queue view/edit (for the playlist browser UI) --------------------- */
+/* The "queue" is the play order from the current track onward: row 0 is the
+   track playing now, rows >= 1 are the upcoming tracks in play order. Edits
+   only touch the upcoming region, so the current track keeps playing. These
+   are session edits over the play order; a playlist_sync() (rescan/reboot)
+   rebuilds the full order and any removed track reappears. */
+
+/** @brief Number of tracks from the current one onward (current + upcoming); 0 if empty/not ready. */
+size_t playlist_queue_len(void);
+
+/**
+ * @brief Read the queue entry at @p row (0 = current track) without changing the position.
+ * @param row       0-based offset from the current track.
+ * @param[out] out  Filled with the track; must not be NULL.
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if storage is not ready; ESP_ERR_NOT_FOUND if @p row
+ *         is past the end.
+ */
+esp_err_t playlist_queue_at(size_t row, playlist_track_t *out);
+
+/**
+ * @brief Move the upcoming track at @p row one step earlier in the queue.
+ *
+ * Only upcoming tracks move, and never above the current track: @p row must be >= 2.
+ *
+ * @param row  Queue row to move (>= 2).
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if storage is not ready; ESP_ERR_INVALID_ARG if @p row
+ *         is the current track, the first upcoming track, or out of range.
+ */
+esp_err_t playlist_queue_move_up(size_t row);
+
+/**
+ * @brief Move the upcoming track at @p row one step later in the queue.
+ * @param row  Queue row to move (>= 1, and not the last row).
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if storage is not ready; ESP_ERR_INVALID_ARG if @p row
+ *         is the current track, the last row, or out of range.
+ */
+esp_err_t playlist_queue_move_down(size_t row);
+
+/**
+ * @brief Remove the upcoming track at @p row from the play order for this session.
+ *
+ * Non-destructive: only the play order shrinks (the file stays on the card and reappears on the
+ * next playlist_sync()). The current track (@p row 0) cannot be removed.
+ *
+ * @param row  Queue row to remove (>= 1).
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if storage is not ready; ESP_ERR_INVALID_ARG if @p row
+ *         is the current track or out of range.
+ */
+esp_err_t playlist_queue_remove(size_t row);
+
 /** @} */
