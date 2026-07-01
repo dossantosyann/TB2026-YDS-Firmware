@@ -9,12 +9,14 @@
  */
 #include "sink_bluetooth.h"
 #include "bluetooth.h"
+#include "decoder.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/stream_buffer.h"
 #include "esp_attr.h"
 
 #include <string.h>
+#include <stdint.h>
 
 /* ~120 ms of 44.1 kHz / 16-bit / stereo PCM. The +1 byte is StreamBuffer's reserved slot.
    Storage lives in PSRAM (CPU-only access, no DMA) to keep internal DRAM free for the BT
@@ -52,10 +54,24 @@ static esp_err_t bt_start(uint32_t rate_hz, uint8_t bits, uint8_t channels)
     return bluetooth_audio_start(bt_pcm_cb);
 }
 
+/* Down-convert scratch: the pipeline pushes 32-bit MSB-justified PCM, but the A2DP SBC encoder
+   wants 16-bit. One decoder chunk (DECODER_READ_BUF_BYTES of int32) halves to this many int16.
+   Only bt_write() (the audio task) touches it, so a static buffer is safe and keeps the small
+   task stack free. */
+static int16_t s_conv[DECODER_READ_BUF_BYTES / sizeof(int32_t)];
+
 static esp_err_t bt_write(const void *pcm, size_t len, size_t *written)
 {
-    size_t n = xStreamBufferSend(s_rb, pcm, len, pdMS_TO_TICKS(SINK_BT_WRITE_TO_MS));
-    if (written) *written = n;
+    /* 32-bit MSB-justified stereo -> 16-bit stereo (keep the high half of each sample). */
+    const int32_t *in = pcm;
+    size_t samples = len / sizeof(int32_t);
+    if (samples > (sizeof s_conv / sizeof s_conv[0])) samples = sizeof s_conv / sizeof s_conv[0];
+    for (size_t i = 0; i < samples; i++) s_conv[i] = (int16_t)(in[i] >> 16);
+
+    size_t sent = xStreamBufferSend(s_rb, s_conv, samples * sizeof(int16_t),
+                                    pdMS_TO_TICKS(SINK_BT_WRITE_TO_MS));
+    /* Report consumption in the caller's 32-bit domain: each 16-bit sample sent came from one. */
+    if (written) *written = (sent / sizeof(int16_t)) * sizeof(int32_t);
     return ESP_OK;
 }
 

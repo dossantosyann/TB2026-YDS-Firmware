@@ -411,9 +411,15 @@ esp_err_t bluetooth_init(void)
     esp_a2d_register_callback(a2d_cb);
     if ((err = esp_a2d_source_init()) != ESP_OK) return err;
 
-    /* Advertise the full SBC capability range on one endpoint; the sink picks the config. */
+    /* Advertise SBC on one endpoint; the sink picks the config from what we offer here.
+       Sample rate is pinned to 44.1 kHz ON PURPOSE: the negotiated A2DP rate is fixed for the
+       whole session, but the audio pipeline has no resampler and feeds each file at its native
+       rate. Offering 48 kHz too would let a sink negotiate 48 kHz, then every 44.1 kHz file (the
+       vast majority) would play ~9% too fast/sharp. Pinning 44.1 kHz makes the common case exact.
+       To support non-44.1 kHz files over BT, add a resampler in the pipeline, THEN re-offer 48 kHz
+       (add ESP_A2D_SBC_CIE_SF_48K back here). See the sink_bluetooth 32->16-bit down-convert note. */
     esp_a2d_mcc_t sep = { .type = ESP_A2D_MCT_SBC };
-    sep.cie.sbc_info.samp_freq    = ESP_A2D_SBC_CIE_SF_44K | ESP_A2D_SBC_CIE_SF_48K;
+    sep.cie.sbc_info.samp_freq    = ESP_A2D_SBC_CIE_SF_44K;
     sep.cie.sbc_info.ch_mode      = ESP_A2D_SBC_CIE_CH_MODE_MONO | ESP_A2D_SBC_CIE_CH_MODE_DUAL_CHANNEL |
                                     ESP_A2D_SBC_CIE_CH_MODE_STEREO | ESP_A2D_SBC_CIE_CH_MODE_JOINT_STEREO;
     sep.cie.sbc_info.block_len    = ESP_A2D_SBC_CIE_BLOCK_LEN_4 | ESP_A2D_SBC_CIE_BLOCK_LEN_8 |
