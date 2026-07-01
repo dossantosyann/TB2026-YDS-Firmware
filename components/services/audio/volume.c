@@ -100,6 +100,11 @@ void volume_set_output(volume_output_t out)
     s_last_bt = 0xFF;                      /* ...the newly selected output */
 }
 
+volume_output_t volume_get_output(void)
+{
+    return s_output;
+}
+
 void volume_set_bt_handler(esp_err_t (*set_abs_vol)(uint8_t))
 {
     s_bt_set = set_abs_vol;

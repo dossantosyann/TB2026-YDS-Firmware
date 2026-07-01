@@ -1,6 +1,11 @@
 /**
  * @file bluetooth_settings.h
- * @brief Bluetooth settings sub-screen (reached from Settings). Stub for now.
+ * @brief Bluetooth settings sub-screen (reached from Settings).
+ *
+ * One combined screen: the paired (known) devices on top, then a scan action and the live nearby
+ * results with signal strength. Connect from either list; a popup on a paired device offers
+ * Connect/Disconnect and Forget. The radio is kept off by default and only powered while scanning
+ * or connected.
  */
 #pragma once
 

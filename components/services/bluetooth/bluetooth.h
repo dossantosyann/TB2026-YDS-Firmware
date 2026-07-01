@@ -39,6 +39,34 @@
  */
 esp_err_t bluetooth_init(void);
 
+/**
+ * @brief Power the radio down: deinit A2DP/AVRCP, Bluedroid and the BR/EDR controller.
+ *
+ * The counterpart to bluetooth_init(), so the UI can keep the radio off by default and only power
+ * it up while scanning or connected (a meaningful current saving on this battery device).
+ * bluetooth_init() may be called again afterwards to bring it back. The known-device list survives
+ * (it lives in NVS), so reconnection still works after a power-up.
+ *
+ * Refuses to tear down under a live or forming link (that would kill audio streaming): call
+ * bluetooth_disconnect() first if you really mean to drop the connection.
+ *
+ * @return ESP_OK when powered down (or already off); ESP_ERR_INVALID_STATE if connected/connecting;
+ *         otherwise the controller-deinit error.
+ */
+esp_err_t bluetooth_shutdown(void);
+
+/**
+ * @brief Load the persisted known-device list without powering the radio up.
+ *
+ * The "cold" part of bluetooth_init(): creates the internal mutex and restores the known
+ * (paired) device list from NVS, but does NOT bring up the controller. Lets the UI show the
+ * paired devices (bluetooth_get_known_devices()) with the radio off, so it only powers up to
+ * scan or connect. bluetooth_init() calls this itself; idempotent.
+ *
+ * @return ESP_OK; ESP_ERR_NO_MEM if the mutex cannot be created; otherwise the NVS error.
+ */
+esp_err_t bluetooth_load_known(void);
+
 /** @brief Maximum number of devices retained from a single scan. */
 #define BLUETOOTH_MAX_DEVICES 16
 

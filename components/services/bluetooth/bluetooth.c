@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/timers.h"
 
 #include <string.h>
 #include <stdint.h>
@@ -23,10 +24,13 @@ static const char *TAG = "bluetooth";
 
 #define BT_DEVICE_NAME   "TB2026-YDS"
 #define BT_INQ_LEN       10              /* inquiry window: 10 * 1.28 s ~= 12.8 s */
+#define BT_CONNECT_TIMEOUT_MS 10000      /* abort a connect that never completes (radio stays on) */
 #define BT_NVS_NS        "bt"            /* NVS namespace for this service */
 #define BT_NVS_KEY_KNOWN "known"        /* blob: the s_known array (count = blob size / entry) */
 
 static bool               s_inited;
+static bool               s_known_loaded;     /* NVS known-list + mutex are ready (radio may be off) */
+static bool               s_ble_mem_released; /* the BLE controller RAM was handed back (once only) */
 static bool               s_scanning;    /* an inquiry is running, collecting into s_devices */
 static bool               s_seeking;     /* TEST ONLY: an inquiry is running for connect_by_name */
 static char               s_target[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
@@ -34,6 +38,7 @@ static char               s_target[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
 /* Scan results, filled by the GAP callback (BT task) and read by the UI task; s_lock guards
    both s_devices and s_device_count. */
 static SemaphoreHandle_t  s_lock;
+static TimerHandle_t      s_conn_timer;  /* one-shot: bounds a connect attempt (see conn_timeout_cb) */
 static bluetooth_device_t s_devices[BLUETOOTH_MAX_DEVICES];
 static size_t             s_device_count;
 static esp_bd_addr_t      s_peer_bda;
@@ -242,12 +247,28 @@ static void remember_peer(void)
     xSemaphoreGive(s_lock);
 }
 
+/* Fires if a connect is still forming after BT_CONNECT_TIMEOUT_MS. The A2DP page attempt can
+   otherwise hang for a long time and keep the radio (and its current draw) on, so tear it down and
+   mark it failed; the resulting DISCONNECTED event confirms the state. Runs in the timer task. */
+static void conn_timeout_cb(TimerHandle_t t)
+{
+    (void)t;
+    if (s_conn_state != BLUETOOTH_CONN_CONNECTING) return;
+    ESP_LOGW(TAG, "connect timed out, aborting");
+    s_conn_state = BLUETOOTH_CONN_FAILED;
+    esp_a2d_source_disconnect(s_peer_bda);
+}
+
 static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
 {
     switch (event) {
     case ESP_A2D_CONNECTION_STATE_EVT:
         switch (param->conn_stat.state) {
         case ESP_A2D_CONNECTION_STATE_CONNECTED:
+            /* Capture the real peer: on an incoming connection (the speaker initiates the link) we
+               never set s_peer_bda ourselves, so remember_peer/disconnect would use a stale one. */
+            memcpy(s_peer_bda, param->conn_stat.remote_bda, ESP_BD_ADDR_LEN);
+            if (s_conn_timer) xTimerStop(s_conn_timer, 0);
             s_conn_state = BLUETOOTH_CONN_CONNECTED;
             s_conn_hdl = param->conn_stat.conn_hdl;
             s_audio_mtu = param->conn_stat.audio_mtu;
@@ -255,9 +276,11 @@ static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
             ESP_LOGI(TAG, "A2DP connected (audio MTU %u)", s_audio_mtu);
             break;
         case ESP_A2D_CONNECTION_STATE_CONNECTING:
+            memcpy(s_peer_bda, param->conn_stat.remote_bda, ESP_BD_ADDR_LEN);
             s_conn_state = BLUETOOTH_CONN_CONNECTING;
             break;
         case ESP_A2D_CONNECTION_STATE_DISCONNECTED:
+            if (s_conn_timer) xTimerStop(s_conn_timer, 0);
             /* An abnormal reason means the attempt failed or the link dropped unexpectedly: keep
                it visible as FAILED. A normal close (user disconnect) returns to IDLE. */
             s_conn_state = (param->conn_stat.disc_rsn == ESP_A2D_DISC_RSN_ABNORMAL)
@@ -325,11 +348,12 @@ static void avrc_ct_cb(esp_avrc_ct_cb_event_t event, esp_avrc_ct_cb_param_t *par
     }
 }
 
-esp_err_t bluetooth_init(void)
+esp_err_t bluetooth_load_known(void)
 {
-    if (s_inited) return ESP_OK;
+    if (s_known_loaded) return ESP_OK;
 
-    s_lock = xSemaphoreCreateMutex();
+    /* The mutex outlives a power-down/up cycle (bluetooth_shutdown keeps it), so create it once. */
+    if (!s_lock) s_lock = xSemaphoreCreateMutex();
     if (!s_lock) return ESP_ERR_NO_MEM;
 
     esp_err_t err = nvs_flash_init();
@@ -339,12 +363,33 @@ esp_err_t bluetooth_init(void)
     }
     if (err != ESP_OK) return err;
 
-    /* Restore the known-device list so reconnect works right after a reboot (bonds are already in
-       NVS via Bluedroid; this brings back the matching addresses/names). */
+    /* Restore the known-device list so it (and reconnect) works right after a reboot with the radio
+       still off (bonds are already in NVS via Bluedroid; this brings back the addresses/names). */
     known_load();
+    s_known_loaded = true;
+    return ESP_OK;
+}
 
-    /* Classic-only: hand the BLE controller RAM back to the heap. */
-    esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
+esp_err_t bluetooth_init(void)
+{
+    if (s_inited) return ESP_OK;
+
+    esp_err_t err = bluetooth_load_known();   /* mutex + NVS + known list, no radio */
+    if (err != ESP_OK) return err;
+
+    /* Bounds a connect attempt; created once and reused across power cycles (like s_lock). */
+    if (!s_conn_timer) {
+        s_conn_timer = xTimerCreate("bt_conn", pdMS_TO_TICKS(BT_CONNECT_TIMEOUT_MS),
+                                    pdFALSE, NULL, conn_timeout_cb);
+        if (!s_conn_timer) return ESP_ERR_NO_MEM;
+    }
+
+    /* Classic-only: hand the BLE controller RAM back to the heap. Once only -- the RAM stays freed
+       across a controller deinit/re-init cycle, and releasing it a second time asserts. */
+    if (!s_ble_mem_released) {
+        esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
+        s_ble_mem_released = true;
+    }
 
     esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     if ((err = esp_bt_controller_init(&cfg)) != ESP_OK) return err;
@@ -387,6 +432,36 @@ esp_err_t bluetooth_init(void)
     return ESP_OK;
 }
 
+esp_err_t bluetooth_shutdown(void)
+{
+    if (!s_inited) return ESP_OK;
+
+    /* Never tear the radio down under a live (or forming) link: that would kill audio streaming to
+       the speaker. The caller powers off only when idle; here we just refuse. */
+    if (s_conn_state == BLUETOOTH_CONN_CONNECTED ||
+        s_conn_state == BLUETOOTH_CONN_CONNECTING) return ESP_ERR_INVALID_STATE;
+
+    if (s_scanning) {
+        s_scanning = false;
+        esp_bt_gap_cancel_discovery();
+    }
+
+    /* Reverse of bluetooth_init(): profiles, then Bluedroid, then the controller. The known-device
+       list stays in NVS (and in s_known), so reconnection still works after the next power-up. */
+    esp_a2d_source_deinit();
+    esp_avrc_ct_deinit();
+    esp_bluedroid_disable();
+    esp_bluedroid_deinit();
+    esp_bt_controller_disable();
+    esp_err_t err = esp_bt_controller_deinit();
+
+    s_conn_state     = BLUETOOTH_CONN_IDLE;
+    s_avrc_connected = false;
+    s_inited         = false;
+    ESP_LOGI(TAG, "radio powered down");
+    return err;
+}
+
 esp_err_t bluetooth_scan_start(void)
 {
     if (!s_inited) return ESP_ERR_INVALID_STATE;
@@ -414,7 +489,7 @@ bool bluetooth_is_scanning(void)
 
 size_t bluetooth_get_devices(bluetooth_device_t *out, size_t cap)
 {
-    if (!out || cap == 0) return 0;
+    if (!out || cap == 0 || !s_lock) return 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     size_t n = s_device_count < cap ? s_device_count : cap;
     memcpy(out, s_devices, n * sizeof *out);
@@ -433,7 +508,10 @@ esp_err_t bluetooth_connect(const esp_bd_addr_t bda)
     }
     memcpy(s_peer_bda, bda, ESP_BD_ADDR_LEN);
     esp_err_t err = esp_a2d_source_connect(s_peer_bda);
-    if (err == ESP_OK) s_conn_state = BLUETOOTH_CONN_CONNECTING;
+    if (err == ESP_OK) {
+        s_conn_state = BLUETOOTH_CONN_CONNECTING;
+        if (s_conn_timer) xTimerReset(s_conn_timer, 0);   /* start the timeout countdown */
+    }
     return err;
 }
 
@@ -466,7 +544,7 @@ bluetooth_conn_state_t bluetooth_get_conn_state(void)
 
 size_t bluetooth_get_known_devices(bt_known_device_t *out, size_t cap)
 {
-    if (!out || cap == 0) return 0;
+    if (!out || cap == 0 || !s_lock) return 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     size_t n = s_known_count < cap ? s_known_count : cap;
     memcpy(out, s_known, n * sizeof *out);
@@ -476,7 +554,7 @@ size_t bluetooth_get_known_devices(bt_known_device_t *out, size_t cap)
 
 bool bluetooth_get_last_device(bt_known_device_t *out)
 {
-    if (!out) return false;
+    if (!out || !s_lock) return false;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     bool valid = s_known_count > 0;
     if (valid) *out = s_known[0];

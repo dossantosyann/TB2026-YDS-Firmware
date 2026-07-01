@@ -79,6 +79,12 @@ bool volume_read_mv(int *out_mv);
 void volume_set_output(volume_output_t out);
 
 /**
+ * @brief The output volume_poll() currently drives (see volume_set_output()).
+ * @return VOLUME_OUT_DAC (jack), VOLUME_OUT_BT (speaker) or VOLUME_OUT_NONE (mute).
+ */
+volume_output_t volume_get_output(void);
+
+/**
  * @brief Register the Bluetooth absolute-volume setter (e.g. bluetooth_set_absolute_volume).
  *
  * Indirection so the volume service does not hard-link the Bluetooth stack when BT is unused.
