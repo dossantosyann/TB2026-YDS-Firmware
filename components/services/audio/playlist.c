@@ -142,6 +142,20 @@ esp_err_t playlist_select(size_t index, playlist_track_t *out)
     return fill_current(out);
 }
 
+esp_err_t playlist_random(playlist_track_t *out)
+{
+    if (!storage_ready()) {
+        ESP_LOGE(TAG, "random: storage not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_count == 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    order_shuffle();   /* fresh permutation over the current order contents */
+    s_pos = 0;
+    return fill_current(out);
+}
+
 /* ---- queue view/edit --------------------------------------------------- */
 /* Row r maps to play order position s_pos + r (row 0 = current track). Edits stay strictly
    above s_pos (upcoming region), so the current track and its playback are never disturbed. */

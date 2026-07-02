@@ -93,6 +93,18 @@ void player_poll(void);
 esp_err_t player_play(size_t index);
 
 /**
+ * @brief Start playback from the stopped state (e.g. first play after boot).
+ *
+ * Plays the playlist's current track. When shuffle is on, the play order is re-shuffled first so
+ * a random track starts (see @ref playlist_random). A no-op unless currently stopped.
+ *
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if not stopped, storage is not ready, or the output is
+ *         Bluetooth and the speaker has not yet acknowledged the volume (never blast); otherwise
+ *         the pipeline/playlist error.
+ */
+esp_err_t player_start(void);
+
+/**
  * @brief Pause the current playback (sink down, position kept).
  * @return ESP_OK; ESP_ERR_INVALID_STATE if not currently playing.
  */

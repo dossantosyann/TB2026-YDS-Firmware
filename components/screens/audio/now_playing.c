@@ -172,6 +172,7 @@ static void handle_select(void)
     case 2:
         if      (status.state == PLAYER_PLAYING) player_pause();
         else if (status.state == PLAYER_PAUSED)  player_resume();
+        else                                     player_start();
         break;
     case 3: player_next(); break;
     case 4: playlist_set_shuffle(!playlist_get_shuffle()); break;

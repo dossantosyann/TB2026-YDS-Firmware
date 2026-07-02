@@ -132,6 +132,20 @@ esp_err_t player_play(size_t index)
     return start_current();
 }
 
+esp_err_t player_start(void)
+{
+    if (s_state != PLAYER_STOPPED) return ESP_ERR_INVALID_STATE;
+    if (!storage_ready())          return ESP_ERR_INVALID_STATE;
+
+    /* Fresh shuffle picks a random first track; ascending order keeps the current position. */
+    if (playlist_get_shuffle()) {
+        esp_err_t err = playlist_random(NULL);
+        if (err != ESP_OK) return err;
+    }
+    pipeline_stop();
+    return start_current();
+}
+
 esp_err_t player_pause(void)
 {
     if (s_state != PLAYER_PLAYING) return ESP_ERR_INVALID_STATE;

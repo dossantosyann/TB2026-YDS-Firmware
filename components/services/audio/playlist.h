@@ -92,6 +92,18 @@ esp_err_t playlist_prev(playlist_track_t *out);
 esp_err_t playlist_select(size_t index, playlist_track_t *out);
 
 /**
+ * @brief Re-mélange l'ordre de lecture et repart sur sa première piste.
+ *
+ * Contrairement à @ref playlist_set_shuffle (qui préserve le morceau courant pour ne pas
+ * interrompre la lecture), ceci génère une permutation fraîche et place la position en tête :
+ * la piste courante devient aléatoire. Pensé pour démarrer une session shuffle depuis l'arrêt.
+ *
+ * @param[out] out  Filled with the new current track; may be NULL.
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if storage is not ready; ESP_ERR_NOT_FOUND if empty.
+ */
+esp_err_t playlist_random(playlist_track_t *out);
+
+/**
  * @brief Set the repeat mode. Default @ref PLAYLIST_REPEAT_ALL.
  * @param mode  The repeat mode.
  */

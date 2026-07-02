@@ -3,6 +3,7 @@
 #include "gfx.h"
 #include "status_bar.h"
 #include "playlist.h"
+#include "player.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -18,8 +19,8 @@
 
 typedef enum { PB_BROWSE, PB_ACTION } pb_state_t;
 
-/* Action menu: 0 = move up, 1 = move down, 2 = remove. */
-enum { PB_ACT_UP, PB_ACT_DOWN, PB_ACT_REMOVE, PB_N_ACTIONS };
+/* Action menu: 0 = play now, 1 = move up, 2 = move down, 3 = remove. */
+enum { PB_ACT_PLAY, PB_ACT_UP, PB_ACT_DOWN, PB_ACT_REMOVE, PB_N_ACTIONS };
 
 static int        s_sel;            /* queue row (0 = current track) */
 static int        s_top;            /* first visible row */
@@ -78,6 +79,7 @@ static void marquee_step(int name_len, int max_chars)
 static bool action_valid(int action, int len)
 {
     switch (action) {
+    case PB_ACT_PLAY:   return true;
     case PB_ACT_UP:     return s_sel >= 2;
     case PB_ACT_DOWN:   return s_sel < len - 1;
     case PB_ACT_REMOVE: return true;
@@ -85,7 +87,7 @@ static bool action_valid(int action, int len)
     }
 }
 
-/* Default popup selection: Move up when valid, else the first valid action. */
+/* Default popup selection: first valid action (Play now, always valid). */
 static int default_action(int len)
 {
     for (int a = 0; a < PB_N_ACTIONS; a++) {
@@ -141,9 +143,9 @@ static void render_browse(screen_t *self)
 #define PB_POPUP_X  20
 #define PB_POPUP_Y  50
 #define PB_POPUP_W  136
-#define PB_POPUP_H  70
+#define PB_POPUP_H  86
 
-static const char *const s_action_labels[PB_N_ACTIONS] = { "Move up", "Move down", "Remove" };
+static const char *const s_action_labels[PB_N_ACTIONS] = { "Play now", "Move up", "Move down", "Remove" };
 
 static void render_action(screen_t *self)
 {
@@ -187,6 +189,14 @@ static void do_action(void)
 
     esp_err_t err = ESP_FAIL;
     switch (s_action_sel) {
+    case PB_ACT_PLAY: {
+        playlist_track_t t = {0};
+        if (playlist_queue_at((size_t)s_sel, &t) == ESP_OK &&
+            player_play(t.index) == ESP_OK) {
+            navigator_pop();                  /* jump to the track, back to Now Playing */
+        }
+        return;                               /* screen popped (or play failed): nothing else to do */
+    }
     case PB_ACT_UP:
         err = playlist_queue_move_up((size_t)s_sel);
         if (err == ESP_OK) s_sel--;
