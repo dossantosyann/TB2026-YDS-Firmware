@@ -146,6 +146,26 @@ esp_err_t display_oled_draw(const uint8_t *buf, size_t len)
     return ESP_OK;
 }
 
+esp_err_t display_oled_set_brightness(uint8_t level)
+{
+    if (level > DISPLAY_OLED_BRIGHTNESS_MAX) level = DISPLAY_OLED_BRIGHTNESS_MAX;
+    write_cmd(CMD_MASTER_CURRENT);
+    write_data1(level);
+    return ESP_OK;
+}
+
+esp_err_t display_oled_sleep(void)
+{
+    write_cmd(CMD_DISPLAY_OFF);
+    return ESP_OK;
+}
+
+esp_err_t display_oled_wake(void)
+{
+    write_cmd(CMD_DISPLAY_ON);
+    return ESP_OK;
+}
+
 esp_err_t display_oled_clear(void)
 {
     memset(s_line, 0, sizeof s_line);

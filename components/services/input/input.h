@@ -80,4 +80,18 @@ typedef struct {
  */
 void input_get_diag(input_diag_t *out);
 
+/**
+ * @brief Milliseconds since the last button event was emitted.
+ *
+ * The input service is the single choke point for all button activity, so this is the
+ * device-wide user-idle time. Reset to zero each time a debounced press produces an
+ * event; the volume potentiometer (a separate analog path) does not count. Building
+ * block for a future screen auto-off / sleep policy -- this service applies no timeout.
+ *
+ * Lock-free single-word read. Returns 0 before input_init().
+ *
+ * @return Idle time in ms.
+ */
+uint32_t input_idle_ms(void);
+
 /** @} */

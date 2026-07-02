@@ -21,6 +21,7 @@
 #include "navigator.h"
 #include "status_bar.h"
 #include "root_menu.h"
+#include "screen_settings.h"
 #include "gfx.h"
 #include "esp_log.h"
 
@@ -79,6 +80,7 @@ void app_run(void)
     spi_device_handle_t disp_spi;
     ESP_ERROR_CHECK(spi_bus_display_init(&disp_spi));
     ESP_ERROR_CHECK(display_oled_init(disp_spi));
+    screen_settings_restore();               /* apply the saved brightness before the first paint */
     ESP_ERROR_CHECK(input_init());
 
     /* SD scan in background so the UI is responsive while the card is enumerated.

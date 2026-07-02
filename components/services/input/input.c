@@ -23,6 +23,7 @@ static QueueHandle_t    s_queue;
 static TaskHandle_t     s_task;
 static input_debounce_t s_debounce;   /* zero-init: prev released, no prior press timestamps */
 static bool             s_ready;
+static volatile uint32_t s_last_activity_ms;   /* time of the last emitted event; drives input_idle_ms */
 
 /* Both pins share this handler: it only wakes the task (I2C/GPIO reads are forbidden in ISR
    context). One notification is enough — the task always re-reads every source on wake. */
@@ -50,6 +51,7 @@ static void input_task(void *arg)
 
         ui_event_t evs[INPUT_BTN_COUNT];
         int n = input_logic_update(&s_debounce, port, a_pressed, now_ms, evs, INPUT_BTN_COUNT);
+        if (n > 0) s_last_activity_ms = now_ms;   /* real user action: reset the idle clock */
         for (int i = 0; i < n; i++) {
             xQueueSend(s_queue, &evs[i], 0);
         }
@@ -102,6 +104,7 @@ esp_err_t input_init(void)
     if ((err = gpio_isr_handler_add(PIN_EXPANDER_INT, input_isr, NULL)) != ESP_OK) goto fail;
     if ((err = gpio_isr_handler_add(PIN_BTN_A, input_isr, NULL)) != ESP_OK) goto fail;
 
+    s_last_activity_ms = (uint32_t)(esp_timer_get_time() / 1000);   /* idle starts at 0 */
     s_ready = true;
     return ESP_OK;
 
@@ -117,6 +120,12 @@ bool input_get_event(ui_event_t *out, TickType_t ticks_to_wait)
 {
     if (!s_queue) return false;
     return xQueueReceive(s_queue, out, ticks_to_wait) == pdTRUE;
+}
+
+uint32_t input_idle_ms(void)
+{
+    if (!s_ready) return 0;
+    return (uint32_t)(esp_timer_get_time() / 1000) - s_last_activity_ms;
 }
 
 void input_get_diag(input_diag_t *out)

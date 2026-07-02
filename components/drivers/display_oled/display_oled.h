@@ -47,4 +47,48 @@ esp_err_t display_oled_draw(const uint8_t *buf, size_t len);
  */
 esp_err_t display_oled_clear(void);
 
+/** Highest brightness level accepted by display_oled_set_brightness(). */
+#define DISPLAY_OLED_BRIGHTNESS_MAX 15
+
+/**
+ * @brief Set the global panel brightness (SSD1333 Master Current, cmd 0xC7).
+ *
+ * Scales the segment output current uniformly across all colours, so it dims the
+ * whole picture without shifting the colour balance -- and lowers the panel's
+ * current draw, which matters on battery. The init sequence leaves this at the
+ * maximum; call this to override it.
+ *
+ * Runs on the caller's task; call from the UI task only (same task as
+ * display_oled_draw()), never concurrently with a blit.
+ *
+ * @param level  0 (dimmest) .. DISPLAY_OLED_BRIGHTNESS_MAX (brightest); clamped.
+ * @return ESP_OK on success, or the SPI error.
+ */
+esp_err_t display_oled_set_brightness(uint8_t level);
+
+/**
+ * @brief Put the panel to sleep (SSD1333 Display OFF, cmd 0xAE).
+ *
+ * Blanks the output and drops the panel to its ~2 µA sleep current; the RAM contents
+ * and all configuration are retained, so display_oled_wake() restores the last frame
+ * with no re-init and no redraw. Building block for a future screen auto-off / sleep
+ * policy -- this driver applies no timeout of its own.
+ *
+ * Not serialised internally: call it from the same task as display_oled_draw() (the UI
+ * task), never concurrently with a blit.
+ *
+ * @return ESP_OK on success, or the SPI error.
+ */
+esp_err_t display_oled_sleep(void);
+
+/**
+ * @brief Wake the panel from sleep (SSD1333 Display ON, cmd 0xAF).
+ *
+ * Undoes display_oled_sleep(); the previously shown frame reappears. Same task
+ * constraint as display_oled_sleep().
+ *
+ * @return ESP_OK on success, or the SPI error.
+ */
+esp_err_t display_oled_wake(void);
+
 /** @} */
