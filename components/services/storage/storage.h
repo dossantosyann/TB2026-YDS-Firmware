@@ -54,6 +54,16 @@ esp_err_t storage_init(void);
 esp_err_t storage_rescan(void);
 
 /**
+ * @brief Unmount the card and invalidate the index, after a card removal.
+ *
+ * Unlike @ref storage_deinit it keeps the PSRAM index buffer allocated, ready for
+ * the storage_init() that follows a re-insertion. No-op if not mounted.
+ *
+ * @return ESP_OK, or the @ref sdcard_unmount error.
+ */
+esp_err_t storage_unmount(void);
+
+/**
  * @brief Whether the card is mounted and a scan has completed.
  * @return true if the index is usable (it may still hold zero tracks on an empty card).
  */

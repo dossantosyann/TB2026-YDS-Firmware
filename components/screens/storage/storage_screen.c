@@ -362,13 +362,21 @@ static void render_confirm(screen_t *self)
 
 /* ---- screen vtable --------------------------------------------------------- */
 
-static void on_enter(screen_t *self)
+static bool s_ready; /* storage_ready() as of the last render: hot-plug edge detect */
+
+static void reset_to_root(void)
 {
-    (void)self;
     strlcpy(s_path, SDCARD_MOUNT_POINT, sizeof s_path);
     s_state      = FB_BROWSE;
     s_action_sel = 0;
     scan_current();
+}
+
+static void on_enter(screen_t *self)
+{
+    (void)self;
+    s_ready = storage_ready();
+    reset_to_root();
 }
 
 static void fb_on_exit(screen_t *self) { (void)self; }
@@ -451,6 +459,12 @@ static void handle_input(screen_t *self, ui_event_t ev)
 
 static void render(screen_t *self)
 {
+    bool ready = storage_ready();
+    if (ready != s_ready) {  /* card hot-plugged while on this screen */
+        s_ready = ready;
+        reset_to_root();
+    }
+
     switch (s_state) {
     case FB_BROWSE:  render_browse(self);  break;
     case FB_ACTION:  render_action(self);  break;

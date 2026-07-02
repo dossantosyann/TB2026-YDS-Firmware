@@ -148,6 +148,17 @@ esp_err_t storage_rescan(void)
     return ESP_OK;
 }
 
+esp_err_t storage_unmount(void)
+{
+    if (!s_mounted) {
+        return ESP_OK;
+    }
+    s_scanned = false;
+    s_count   = 0;
+    s_mounted = false;
+    return sdcard_unmount();
+}
+
 bool storage_ready(void)
 {
     return s_mounted && s_scanned;

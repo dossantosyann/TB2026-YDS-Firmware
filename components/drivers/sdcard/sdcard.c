@@ -17,6 +17,7 @@ static const char *TAG = "sdcard";
 #define SD_ALLOC_UNIT_SIZE  (16 * 1024)
 
 static sdmmc_card_t *s_card;       /* non-NULL while mounted */
+static bool          s_bus_up;     /* SPI3 bus initialized once, never freed */
 static bool          s_detect_cfg; /* PIN_SD_DETECT configured once, lazily */
 
 /* Card-detect switch shorts to GND when a card is seated, so with an internal
@@ -33,11 +34,20 @@ esp_err_t sdcard_mount(void)
         return ESP_ERR_NOT_FOUND;
     }
 
-    esp_err_t err = spi_bus_sdcard_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "SPI3 init failed: %s", esp_err_to_name(err));
-        return err;
+    /* Bring the SPI3 bus up once and keep it for the lifetime of the firmware. Never
+       spi_bus_free() it: on the classic ESP32 both SPI hosts share one DMA clock bit
+       (DPORT_SPI_DMA_CLK_EN), and IDF ref-counts SPI2/SPI3 DMA separately — freeing
+       SPI3 gates the clock and stalls an in-flight display (SPI2) DMA transfer, which
+       hangs the UI task inside its timeout-less polling transmit. */
+    if (!s_bus_up) {
+        esp_err_t bus_err = spi_bus_sdcard_init();
+        if (bus_err != ESP_OK) {
+            ESP_LOGE(TAG, "SPI3 init failed: %s", esp_err_to_name(bus_err));
+            return bus_err;
+        }
+        s_bus_up = true;
     }
+    esp_err_t err;
 
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = SPI_BUS_SDCARD_HOST;
@@ -59,7 +69,6 @@ esp_err_t sdcard_mount(void)
     err = esp_vfs_fat_sdspi_mount(SDCARD_MOUNT_POINT, &host, &slot, &mount_cfg, &s_card);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "mount failed: %s", esp_err_to_name(err));
-        spi_bus_free(SPI_BUS_SDCARD_HOST);
         s_card = NULL;
         return err;
     }
@@ -73,9 +82,9 @@ esp_err_t sdcard_unmount(void)
     if (s_card == NULL) {
         return ESP_OK;
     }
+    /* Removes the sdspi device but keeps the SPI3 bus up (see sdcard_mount). */
     esp_err_t err = esp_vfs_fat_sdcard_unmount(SDCARD_MOUNT_POINT, s_card);
     s_card = NULL;
-    spi_bus_free(SPI_BUS_SDCARD_HOST);
     return err;
 }
 
