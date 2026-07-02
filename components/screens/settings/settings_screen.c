@@ -11,18 +11,19 @@
 #include "bluetooth_settings.h"
 #include "audio_settings.h"
 #include "screen_settings.h"
+#include "power_settings.h"
 #include "navigator.h"
 #include "status_bar.h"
 #include "gfx.h"
 
-#define N_ITEMS      3
+#define N_ITEMS      4
 #define MENU_ROW_H   28
 #define MENU_Y0      (STATUS_BAR_H + 6)
 #define MENU_ARROW_X 4
 #define MENU_TEXT_X  22
 #define MENU_SCALE   2
 
-static const char *const s_labels[N_ITEMS] = { "Bluetooth", "Audio", "Screen" };
+static const char *const s_labels[N_ITEMS] = { "Bluetooth", "Audio", "Screen", "Power off" };
 static screen_t         *s_targets[N_ITEMS];   /* seeded on first getter call */
 static int s_sel = 0;
 
@@ -66,6 +67,7 @@ screen_t *settings_screen(void)
         s_targets[0] = bluetooth_settings_screen();
         s_targets[1] = audio_settings_screen();
         s_targets[2] = screen_settings_screen();
+        s_targets[3] = power_settings_screen();
         done = 1;
     }
     return &s_menu;
