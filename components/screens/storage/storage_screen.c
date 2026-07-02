@@ -258,7 +258,7 @@ static void render_browse(screen_t *self)
         if (sel) gfx_fill_rect(0, y, GFX_W, FB_ROW_H, GFX_WHITE);
 
         gfx_color_t fg = sel ? GFX_BLACK : GFX_WHITE;
-        gfx_color_t dir_color = sel ? GFX_BLACK : gfx_rgb(100, 180, 255);
+        gfx_color_t dir_color = sel ? GFX_BLACK : gfx_rgb(0, 255, 0);
 
         fb_entry_t *e = &s_entries[idx];
 
