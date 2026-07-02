@@ -41,6 +41,10 @@ esp_err_t sdcard_mount(void)
 
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = SPI_BUS_SDCARD_HOST;
+    /* 40 MHz: 192 kHz/24-bit WAV needs ~1.15 MB/s sustained; the 20 MHz default
+       leaves no margin through FATFS. Out of SD SPI-mode spec (25 MHz) but fine
+       on short IOMUX traces; drop back to SDMMC_FREQ_DEFAULT if mounts fail. */
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
 
     sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
     slot.gpio_cs = PIN_SD_CS;
@@ -73,6 +77,11 @@ esp_err_t sdcard_unmount(void)
     s_card = NULL;
     spi_bus_free(SPI_BUS_SDCARD_HOST);
     return err;
+}
+
+int sdcard_freq_khz(void)
+{
+    return s_card ? s_card->real_freq_khz : 0;
 }
 
 bool sdcard_present(void)

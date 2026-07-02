@@ -131,6 +131,9 @@ static void render_storage(screen_t *self)
     emitf(GFX_WHITE, "Card:    %s", present ? "present" : "absent");
     emitf(GFX_WHITE, "Mounted: %s", ready ? "yes" : present ? "scanning..." : "no");
 
+    int khz = sdcard_freq_khz();
+    if (khz > 0) emitf(GFX_WHITE, "Bus:     %d MHz SPI", khz / 1000);
+
     if (!ready) return;
 
     uint64_t tot = 0, used = 0;

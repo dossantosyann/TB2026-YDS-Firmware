@@ -56,4 +56,14 @@ esp_err_t sdcard_unmount(void);
  */
 bool sdcard_present(void);
 
+/**
+ * @brief Actual SPI clock negotiated with the card by the host, in kHz.
+ *
+ * May be lower than the frequency requested at mount (the host rounds down to
+ * a reachable divider), so this is the value to trust when checking throughput.
+ *
+ * @return Frequency in kHz while mounted, 0 otherwise.
+ */
+int sdcard_freq_khz(void);
+
 /** @} */

@@ -35,8 +35,14 @@ static i2s_std_config_t std_config(uint32_t rate_hz, i2s_data_bit_width_t bits)
 
 esp_err_t i2s_bus_init(i2s_chan_handle_t *out_tx_handle)
 {
-    const i2s_chan_config_t chan_cfg =
+    i2s_chan_config_t chan_cfg =
         I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    /* Deeper DMA ring: the default 6 desc x 240 frames is only 7.5 ms of cushion at
+       192 kHz, so any SD latency spike is an audible underrun. 12 x 511 = 6132 frames
+       gives ~32 ms at 192 kHz (~139 ms at 44.1 kHz) for ~49 KB of internal DMA RAM.
+       511 frames is the ceiling per descriptor (4092-byte limit / 8-byte frame). */
+    chan_cfg.dma_desc_num  = 12;
+    chan_cfg.dma_frame_num = 511;
     esp_err_t err = i2s_new_channel(&chan_cfg, out_tx_handle, NULL); // TX only, no RX
     if (err != ESP_OK) return err;
 
