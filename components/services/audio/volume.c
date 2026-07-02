@@ -6,6 +6,13 @@
 #include "volume.h"
 #include "adc.h"
 #include "audio_dac.h"
+#include "settings.h"
+
+/* Balance persisted in NVS as a biased u8 (steps + BAL_BIAS) so a signed trim fits an unsigned
+   store; BAL_BIAS is also the plausible-range half-width, i.e. steps stay within [-40, +40]
+   (±20 dB at 0.5 dB/step, matching the audio-settings slider). */
+#define BAL_KEY   "audio_bal"
+#define BAL_BIAS  40
 
 static adc_oneshot_unit_handle_t s_adc;
 static bool    s_adc_ready;                /* pot ADC unit brought up (independent of full init) */
@@ -46,6 +53,11 @@ esp_err_t volume_init(void)
 
     esp_err_t err = ensure_adc();
     if (err != ESP_OK) return err;
+
+    /* Restore the persisted L/R balance trim (default 0 when never set / out of range). */
+    uint8_t stored;
+    if (settings_get_u8(BAL_KEY, &stored) == ESP_OK && stored <= 2 * BAL_BIAS)
+        s_balance = (int8_t)((int)stored - BAL_BIAS);
 
     s_ready = true;
     volume_poll(NULL, NULL);               /* push the initial knob position to the active output */
@@ -114,4 +126,14 @@ void volume_set_balance(int8_t steps)
 {
     s_balance = steps;
     s_last_l = s_last_r = 0xFF;            /* force a re-apply on the next poll */
+}
+
+int8_t volume_get_balance(void)
+{
+    return s_balance;
+}
+
+void volume_save_balance(void)
+{
+    settings_set_u8(BAL_KEY, (uint8_t)(s_balance + BAL_BIAS));
 }

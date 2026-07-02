@@ -8,7 +8,6 @@ idf_component_register(
         "audio/playlist_browser.c"
         "audio/now_playing.c"
         "audio/output_select.c"
-        "settings/bt_devices.c"
         "settings/bluetooth_settings.c"
         "settings/audio_settings.c"
         "settings/screen_settings.c"

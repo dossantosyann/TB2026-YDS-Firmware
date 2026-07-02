@@ -105,4 +105,19 @@ void volume_set_bt_handler(esp_err_t (*set_abs_vol)(uint8_t volume));
  */
 void volume_set_balance(int8_t steps);
 
+/**
+ * @brief The current L/R balance trim in register steps (see volume_set_balance()).
+ * @return Signed step offset; positive attenuates RIGHT, negative LEFT, 0 = equal.
+ */
+int8_t volume_get_balance(void);
+
+/**
+ * @brief Persist the current balance trim to NVS so it survives a reboot.
+ *
+ * Call sparingly (e.g. when the user leaves the audio-settings screen), not on every
+ * step: the live trim is applied by volume_set_balance(), this only writes flash.
+ * volume_init() restores the saved value on boot.
+ */
+void volume_save_balance(void);
+
 /** @} */
