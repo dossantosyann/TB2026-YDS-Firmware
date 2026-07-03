@@ -10,6 +10,7 @@
 #include "navigator.h"
 #include "status_bar.h"
 #include "gfx.h"
+#include "icons.h"
 
 #include "power.h"
 #include "fuel_gauge.h"
@@ -312,14 +313,17 @@ static screen_t s_peripherals = DETAIL(render_peripherals);
 /* ---- top-level menu ------------------------------------------------------------- */
 
 #define N_ITEMS    5
-#define MENU_ROW_H 28
-#define MENU_Y0    (STATUS_BAR_H + 6)
-#define MENU_ARROW_X 4
-#define MENU_TEXT_X  22
+#define MENU_ROW_H 32                 /* 160px content / 5 items = 32px even slices */
+#define MENU_Y0    (STATUS_BAR_H + 8)  /* symmetric top/bottom margins */
+#define MENU_ARROW_X 2
+#define MENU_ICON_X  18
+#define MENU_TEXT_X  40
 #define MENU_SCALE   2
 
 static const char *const s_labels[N_ITEMS] = { "Battery", "Storage", "Inputs", "Peripherals", "System" };
 static screen_t *const   s_targets[N_ITEMS] = { &s_battery, &s_storage, &s_inputs, &s_peripherals, &s_system };
+/* 16x16 type icons, parallel to s_labels; NULL until the icon exists. */
+static const uint8_t *const s_icons[N_ITEMS] = { icon_stats_battery, icon_stats_storage, icon_stats_inputs, icon_stats_peripherals, icon_stats_system };
 static int s_sel = 0;
 
 static void menu_input(screen_t *self, ui_event_t ev)
@@ -340,10 +344,15 @@ static void menu_render(screen_t *self)
 {
     (void)self;
     gfx_clear(GFX_BLACK);
+    gfx_color_t accent = gfx_rgb(255, 120, 0);
     for (int i = 0; i < N_ITEMS; i++) {
         int y = MENU_Y0 + i * MENU_ROW_H;
-        if (i == s_sel)
-            gfx_draw_text(MENU_ARROW_X, y, ">", gfx_rgb(255, 120, 0), MENU_SCALE);
+        bool sel = (i == s_sel);
+        if (sel)
+            gfx_draw_text(MENU_ARROW_X, y, ">", accent, MENU_SCALE);
+        if (s_icons[i])
+            gfx_blit_1bpp(MENU_ICON_X, y - 1, ICON_STATS_BATTERY_W, ICON_STATS_BATTERY_H,
+                          s_icons[i], sel ? accent : GFX_WHITE);   /* -1: center 16px icon on 14px text */
         gfx_draw_text(MENU_TEXT_X, y, s_labels[i], GFX_WHITE, MENU_SCALE);
     }
 }

@@ -64,6 +64,14 @@ esp_err_t playlist_select(size_t i, playlist_track_t *o)
     g_pos = i; fill(o); return ESP_OK;
 }
 playlist_repeat_t playlist_get_repeat(void) { return g_repeat; }
+bool playlist_get_shuffle(void) { return false; }   /* transport tests run in list order */
+esp_err_t playlist_random(playlist_track_t *o)
+{
+    if (!g_ready || g_count == 0) return ESP_ERR_INVALID_STATE;
+    g_pos = 0;                                       /* deterministic "random" for the tests */
+    if (o) fill(o);
+    return ESP_OK;
+}
 
 /* ---- fake pipeline ----------------------------------------------------------------------- */
 static void (*g_end_cb)(pipeline_end_reason_t);
@@ -81,16 +89,18 @@ esp_err_t pipeline_stop(void)   { g_stop++;   return ESP_OK; }
 esp_err_t pipeline_pause(void)  { g_pause++;  return ESP_OK; }
 esp_err_t pipeline_resume(void) { g_resume++; return ESP_OK; }
 void pipeline_set_sink(const audio_sink_t *s) { (void)s; }
+esp_err_t pipeline_switch_sink(void) { return ESP_OK; }
 void pipeline_get_position(uint32_t *e, uint32_t *t) { if (e) *e = 0; if (t) *t = 0; }
 
 static void pipe_reset(void) { g_play = g_stop = g_pause = g_resume = 0; g_play_ret = ESP_OK; g_last_path[0] = 0; }
 
 /* ---- other fakes ------------------------------------------------------------------------- */
-static bool g_storage_ready = true, g_bt_acked = true;
+static bool g_storage_ready = true, g_bt_acked = true, g_bt_connected = true;
 static volume_output_t g_vol_out;
 
 bool storage_ready(void)        { return g_storage_ready; }
 bool bluetooth_volume_acked(void) { return g_bt_acked; }
+bool bluetooth_is_connected(void) { return g_bt_connected; }
 void volume_set_output(volume_output_t o) { g_vol_out = o; }
 
 /* player_init() wires the volume service's BT output to the AVRCP setter; the transport logic
@@ -231,24 +241,65 @@ static void test_bt_safety(void)
     assert(player_set_output(VOLUME_OUT_BT) == ESP_OK);
     assert(g_vol_out == VOLUME_OUT_BT);             /* volume routing kept consistent */
 
-    /* speaker has not acknowledged the volume: never stream. */
+    /* speaker has not acknowledged the volume: the play succeeds but the stream is HELD
+       (never blast at the speaker's default volume) -- nothing reaches the pipeline yet. */
     g_bt_acked = false;
-    assert(player_play(0) == ESP_ERR_INVALID_STATE);
-    assert(g_play == 0);
-
-    /* ack arrives: now it streams. */
-    g_bt_acked = true;
     assert(player_play(0) == ESP_OK);
-    assert(g_play == 1);
+    assert(g_play == 0 && state() == PLAYER_STOPPED);
 
-    /* auto-advance is gated too: if the ack is lost, stop rather than blast. */
+    /* ack arrives: the maintenance poll completes the deferred start. */
+    g_bt_acked = true;
+    player_poll();
+    assert(g_play == 1 && state() == PLAYER_PLAYING);
+
+    /* auto-advance is gated too: EOF with the ack lost defers rather than blasting... */
     pipe_reset(); g_bt_acked = false;
     g_end_cb(PIPE_END_EOF);
     assert(state() == PLAYER_STOPPED && g_play == 0);
 
+    /* ...and the poll picks the held track up once the speaker confirms. */
     g_bt_acked = true;
+    player_poll();
+    assert(state() == PLAYER_PLAYING && g_play == 1);
+
     player_set_output(VOLUME_OUT_DAC);
-    printf("player: BT volume-ack gate blocks streaming until confirmed OK\n");
+    player_stop();
+    printf("player: BT volume-ack gate holds streaming until confirmed OK\n");
+}
+
+static void test_unsupported_format(void)
+{
+    /* The sink refused the track's format (non-44.1 kHz over BT): the player must stop AND
+       flag it, so the UI can say "not playable" instead of an unexplained silent stop. */
+    pl_set(3, PLAYLIST_REPEAT_ALL, true); pipe_reset();
+    player_init();
+    assert(player_play(0) == ESP_OK);
+    g_end_cb(PIPE_END_UNSUPPORTED);
+    player_status_t s;
+    assert(player_get_state(&s) == ESP_OK);
+    assert(s.state == PLAYER_STOPPED && s.track_unsupported);
+
+    /* A fresh play attempt clears the notice. */
+    assert(player_play(1) == ESP_OK);
+    assert(player_get_state(&s) == ESP_OK && !s.track_unsupported);
+    printf("player: unsupported-format stop is flagged and cleared on retry OK\n");
+}
+
+static void test_bt_drop_fallback(void)
+{
+    /* The BT link dies while it is the active output: the poll must stop playback (it now
+       streams into a dead sink) and reroute to the DAC so the UI is not stuck on BT. */
+    pl_set(3, PLAYLIST_REPEAT_ALL, true); pipe_reset();
+    player_init();
+    g_bt_connected = true; g_bt_acked = true;
+    assert(player_set_output(VOLUME_OUT_BT) == ESP_OK);
+    assert(player_play(0) == ESP_OK && state() == PLAYER_PLAYING);
+
+    g_bt_connected = false;
+    player_poll();
+    assert(state() == PLAYER_STOPPED);
+    assert(g_vol_out == VOLUME_OUT_DAC);
+    printf("player: BT link drop stops playback and falls back to the DAC OK\n");
 }
 
 int main(void)
@@ -261,6 +312,8 @@ int main(void)
     test_pause_resume();
     test_errors();
     test_bt_safety();
+    test_unsupported_format();
+    test_bt_drop_fallback();
     printf("player: all assertions passed\n");
     return 0;
 }

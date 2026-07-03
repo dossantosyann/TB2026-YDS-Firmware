@@ -28,8 +28,11 @@
 
 /** @brief Why a file playback ended, reported to the track-end callback. */
 typedef enum {
-    PIPE_END_EOF,    /**< The decoder reached end of file: play the next track. */
-    PIPE_END_ERROR,  /**< Open or decode failed: stop and surface the error. */
+    PIPE_END_EOF,          /**< The decoder reached end of file: play the next track. */
+    PIPE_END_ERROR,        /**< Open or decode failed: stop and surface the error. */
+    PIPE_END_UNSUPPORTED,  /**< The active sink refused the file's format (e.g. a non-44.1 kHz
+                                file over Bluetooth, which has no resampler): stop and tell
+                                the user the track is not playable on this output. */
 } pipeline_end_reason_t;
 
 /**
@@ -96,6 +99,19 @@ esp_err_t pipeline_resume(void);
  * @param sink  Sink vtable to use; ignored if NULL.
  */
 void pipeline_set_sink(const audio_sink_t *sink);
+
+/**
+ * @brief Re-route the current playback onto the sink last set by pipeline_set_sink().
+ *
+ * Stops the old sink and starts the new one at the running track's format, keeping the decoder
+ * open so playback continues from its current position (no restart, no seek). A no-op unless a
+ * file is streaming. If the new sink refuses the format (e.g. a non-44.1 kHz file over
+ * Bluetooth) the track-end callback fires with @ref PIPE_END_UNSUPPORTED, as on the play path.
+ *
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if pipeline_init() has not run; ESP_FAIL if the queue
+ *         is full.
+ */
+esp_err_t pipeline_switch_sink(void);
 
 /**
  * @brief Read a tear-free snapshot of the current playback position.

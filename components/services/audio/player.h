@@ -42,6 +42,9 @@ typedef struct {
     playlist_track_t track;       /**< Current track; valid only when @p state is not STOPPED. */
     uint32_t         elapsed_ms;  /**< Playback position in ms (0 when stopped). */
     uint32_t         total_ms;    /**< Track duration in ms; 0 if unknown or stopped. */
+    bool             track_unsupported; /**< The last playback stopped because the active output
+                                             refused the track's format (e.g. non-44.1 kHz over
+                                             Bluetooth). Cleared by the next play/stop action. */
 } player_status_t;
 
 /**
@@ -55,10 +58,11 @@ esp_err_t player_init(void);
  * @brief Select the output and keep the volume routing consistent.
  *
  * Points the pipeline at the matching sink and tells the volume service where to send the pot.
- * If a track is currently playing the live stream is re-routed onto the new sink immediately
- * (restarted from the top of the current track — position-exact resume is out of scope);
- * otherwise the choice is just remembered for the next playback. This is the single switch
- * point for both manual selection and a future automatic BT connect/disconnect switch.
+ * Selecting the output already in use is a no-op (playback is not disturbed). If a track is
+ * currently playing the live stream is re-routed onto the new sink immediately, continuing from
+ * its current position (the decoder stays open, no restart); otherwise the choice is just
+ * remembered for the next playback. This is the single switch point for both manual selection
+ * and a future automatic BT connect/disconnect switch.
  *
  * Bluetooth is referenced only on this path, so a build without BT still links. Switching to
  * VOLUME_OUT_BT primes the speaker's volume and, if a stream is live, holds it until the speaker

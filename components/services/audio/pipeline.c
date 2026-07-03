@@ -33,7 +33,7 @@ static const char *TAG = "pipeline";
 
 #define PIPE_PATH_MAX      320          /* matches STORAGE_PATH_MAX: "/sdcard/" + LFN + nul */
 
-enum { CMD_PLAY_TONE, CMD_PLAY_FILE, CMD_STOP, CMD_PAUSE, CMD_RESUME };
+enum { CMD_PLAY_TONE, CMD_PLAY_FILE, CMD_STOP, CMD_PAUSE, CMD_RESUME, CMD_SWITCH_SINK };
 
 typedef struct {
     uint8_t  cmd;
@@ -127,10 +127,12 @@ static void run_file(const char *path)
         return;
     }
     ESP_LOGI(TAG, "file: %lu Hz %u-bit %u-ch", fmt.rate_hz, fmt.bits, fmt.channels);
-    if (sink->start(fmt.rate_hz, fmt.bits, fmt.channels) != ESP_OK) {
-        ESP_LOGE(TAG, "file: sink start failed");
+    esp_err_t serr = sink->start(fmt.rate_hz, fmt.bits, fmt.channels);
+    if (serr != ESP_OK) {
+        ESP_LOGE(TAG, "file: sink start failed (%s)", esp_err_to_name(serr));
         decoder_close();
-        if (s_end_cb) s_end_cb(PIPE_END_ERROR);
+        if (s_end_cb) s_end_cb(serr == ESP_ERR_NOT_SUPPORTED ? PIPE_END_UNSUPPORTED
+                                                             : PIPE_END_ERROR);
         return;
     }
 
@@ -142,31 +144,56 @@ static void run_file(const char *path)
     s_pos_total_ms = fmt.duration_ms;
     s_pos_rate     = fmt.rate_hz;                  /* set last: non-zero marks position valid */
     pipe_cmd_t c;
+    size_t got = 0, off = 0;   /* current decode chunk and how much the sink accepted so far */
     for (;;) {
         if (xQueueReceive(s_cmd_q, &c, 0)) {
             if (c.cmd == CMD_STOP) { notify = false; break; }
+            if (c.cmd == CMD_SWITCH_SINK) {
+                /* Re-route mid-track onto the newly selected sink, keeping the decoder open so
+                   the position (s_pos_*) carries over: the track continues where it was. Any
+                   partially written chunk (off < got) is flushed to the new sink next. If the
+                   new sink refuses the format (e.g. non-44.1 kHz over Bluetooth), end as the
+                   play path would so the UI can say the track is not playable on this output. */
+                sink->stop();
+                sink = s_sink;
+                serr = sink->start(fmt.rate_hz, fmt.bits, fmt.channels);
+                if (serr != ESP_OK) {
+                    reason = (serr == ESP_ERR_NOT_SUPPORTED) ? PIPE_END_UNSUPPORTED
+                                                             : PIPE_END_ERROR;
+                    break;
+                }
+            }
             if (c.cmd == CMD_PAUSE) {
                 sink->stop();                      /* path down; decoder kept open */
                 sink_on = false;
                 do { xQueueReceive(s_cmd_q, &c, portMAX_DELAY); } while (c.cmd == CMD_PAUSE);
                 if (c.cmd == CMD_STOP) { notify = false; break; }
-                if (sink->start(fmt.rate_hz, fmt.bits, fmt.channels) != ESP_OK) {
-                    reason = PIPE_END_ERROR; break;
+                serr = sink->start(fmt.rate_hz, fmt.bits, fmt.channels);
+                if (serr != ESP_OK) {
+                    reason = (serr == ESP_ERR_NOT_SUPPORTED) ? PIPE_END_UNSUPPORTED
+                                                             : PIPE_END_ERROR;
+                    break;
                 }
                 sink_on = true;
             }
             /* CMD_RESUME while running, or a stray PLAY, is ignored (player serialises). */
         }
 
-        size_t got = 0;
-        if (decoder_read(s_file_buf, sizeof s_file_buf, &got) != ESP_OK) {
-            reason = PIPE_END_ERROR; break;
+        if (off >= got) {                          /* previous chunk fully consumed: next one */
+            if (decoder_read(s_file_buf, sizeof s_file_buf, &got) != ESP_OK) {
+                reason = PIPE_END_ERROR; break;
+            }
+            if (got == 0) break;                   /* EOF */
+            off = 0;
         }
-        if (got == 0) break;                       /* EOF */
 
-        size_t written;
-        sink->write(s_file_buf, got, &written);
-        s_pos_frames += (uint32_t)(got / out_frame);
+        /* The sink may accept only part of the chunk (Bluetooth backpressure, or a stalled
+           link). Advance by what it took and retry the rest next iteration -- dropping it
+           instead would glitch, and the loop head keeps STOP/PAUSE responsive meanwhile. */
+        size_t written = 0;
+        sink->write(s_file_buf + off, got - off, &written);
+        off += written;
+        s_pos_frames += (uint32_t)(written / out_frame);
     }
 
     if (sink_on) sink->stop();
@@ -212,6 +239,13 @@ esp_err_t pipeline_init(void)
 void pipeline_set_sink(const audio_sink_t *sink)
 {
     if (sink) s_sink = sink;
+}
+
+esp_err_t pipeline_switch_sink(void)
+{
+    if (!s_cmd_q) return ESP_ERR_INVALID_STATE;
+    pipe_cmd_t c = { .cmd = CMD_SWITCH_SINK };
+    return xQueueSend(s_cmd_q, &c, 0) == pdPASS ? ESP_OK : ESP_FAIL;
 }
 
 void pipeline_set_track_end_cb(void (*cb)(pipeline_end_reason_t reason))

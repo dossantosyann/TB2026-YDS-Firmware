@@ -75,3 +75,28 @@ extern const uint8_t icon_folder[];
 #define ICON_SONG_W 8
 #define ICON_SONG_H 8
 extern const uint8_t icon_song[];
+
+/* stats_battery.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_STATS_BATTERY_W 16
+#define ICON_STATS_BATTERY_H 16
+extern const uint8_t icon_stats_battery[];
+
+/* stats_storage.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_STATS_STORAGE_W 16
+#define ICON_STATS_STORAGE_H 16
+extern const uint8_t icon_stats_storage[];
+
+/* stats_inputs.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_STATS_INPUTS_W 16
+#define ICON_STATS_INPUTS_H 16
+extern const uint8_t icon_stats_inputs[];
+
+/* stats_peripherals.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_STATS_PERIPHERALS_W 16
+#define ICON_STATS_PERIPHERALS_H 16
+extern const uint8_t icon_stats_peripherals[];
+
+/* stats_system.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_STATS_SYSTEM_W 16
+#define ICON_STATS_SYSTEM_H 16
+extern const uint8_t icon_stats_system[];

@@ -26,7 +26,8 @@
 typedef struct {
     /** Configure for rate_hz / bits-per-sample / channel count and power the path up. */
     esp_err_t (*start)(uint32_t rate_hz, uint8_t bits, uint8_t channels);
-    /** Stream @p len bytes of interleaved PCM; @p *written receives the bytes accepted. */
+    /** Stream @p len bytes of interleaved PCM; @p *written receives the bytes accepted, which
+        may be fewer than @p len (backend backpressure) -- the caller retries the remainder. */
     esp_err_t (*write)(const void *pcm, size_t len, size_t *written);
     /** Power the path down (pop-free where applicable). */
     esp_err_t (*stop)(void);

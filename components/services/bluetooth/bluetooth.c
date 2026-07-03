@@ -24,7 +24,14 @@ static const char *TAG = "bluetooth";
 
 #define BT_DEVICE_NAME   "TB2026-YDS"
 #define BT_INQ_LEN       10              /* inquiry window: 10 * 1.28 s ~= 12.8 s */
-#define BT_CONNECT_TIMEOUT_MS 10000      /* abort a connect that never completes (radio stays on) */
+#define BT_CONNECT_TIMEOUT_MS 16000      /* abort a connect that never completes (radio stays on);
+                                            must exceed BT_PAGE_TIMEOUT_SLOTS so one full page
+                                            attempt can run to completion */
+#define BT_PAGE_TIMEOUT_SLOTS 24000      /* 15 s in 0.625 ms slots. After an abnormal drop the
+                                            speaker holds the dead link for its supervision
+                                            timeout (observed 24000 slots) and ignores paging
+                                            until then; the stock 5.12 s page timeout makes a
+                                            quick reconnect fail spuriously (HCI 0x04). */
 #define BT_NVS_NS        "bt"            /* NVS namespace for this service */
 #define BT_NVS_KEY_KNOWN "known"        /* blob: the s_known array (count = blob size / entry) */
 
@@ -281,10 +288,12 @@ static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
             break;
         case ESP_A2D_CONNECTION_STATE_DISCONNECTED:
             if (s_conn_timer) xTimerStop(s_conn_timer, 0);
-            /* An abnormal reason means the attempt failed or the link dropped unexpectedly: keep
-               it visible as FAILED. A normal close (user disconnect) returns to IDLE. */
-            s_conn_state = (param->conn_stat.disc_rsn == ESP_A2D_DISC_RSN_ABNORMAL)
-                               ? BLUETOOTH_CONN_FAILED : BLUETOOTH_CONN_IDLE;
+            /* IDLE only for a normal close of an open link (user disconnect). Everything else is
+               FAILED: an abnormal drop, or a connect attempt that never opened -- a page timeout
+               reports a "normal" close while we are still CONNECTING. */
+            s_conn_state = (param->conn_stat.disc_rsn != ESP_A2D_DISC_RSN_ABNORMAL &&
+                            s_conn_state == BLUETOOTH_CONN_CONNECTED)
+                               ? BLUETOOTH_CONN_IDLE : BLUETOOTH_CONN_FAILED;
             ESP_LOGW(TAG, "A2DP disconnected (reason %d)", param->conn_stat.disc_rsn);
             break;
         default:  /* DISCONNECTING: keep current state until DISCONNECTED arrives. */
@@ -392,10 +401,15 @@ esp_err_t bluetooth_init(void)
     }
 
     esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    if ((err = esp_bt_controller_init(&cfg)) != ESP_OK) return err;
-    if ((err = esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT)) != ESP_OK) return err;
-    if ((err = esp_bluedroid_init()) != ESP_OK) return err;
-    if ((err = esp_bluedroid_enable()) != ESP_OK) return err;
+    if ((err = esp_bt_controller_init(&cfg)) != ESP_OK) {
+        ESP_LOGE(TAG, "controller init failed (%s)", esp_err_to_name(err));
+        return err;
+    }
+    /* On any later failure, unwind everything brought up so far: a half-initialised stack would
+       make every subsequent bluetooth_init() fail until reboot (the radio looks dead). */
+    if ((err = esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT)) != ESP_OK) goto fail_controller;
+    if ((err = esp_bluedroid_init()) != ESP_OK) goto fail_enable;
+    if ((err = esp_bluedroid_enable()) != ESP_OK) goto fail_bluedroid;
 
     esp_bt_gap_set_device_name(BT_DEVICE_NAME);
     esp_bt_gap_register_callback(gap_cb);
@@ -404,12 +418,15 @@ esp_err_t bluetooth_init(void)
     esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_NONE;
     esp_bt_gap_set_security_param(ESP_BT_SP_IOCAP_MODE, &iocap, sizeof iocap);
 
+    /* Page long enough to ride out a peer still holding a dead link (see BT_PAGE_TIMEOUT_SLOTS). */
+    esp_bt_gap_set_page_timeout(BT_PAGE_TIMEOUT_SLOTS);
+
     /* AVRCP must be initialised before A2DP (Bluedroid requirement, see esp_avrc_ct_init docs). */
-    if ((err = esp_avrc_ct_init()) != ESP_OK) return err;
+    if ((err = esp_avrc_ct_init()) != ESP_OK) goto fail_stack;
     esp_avrc_ct_register_callback(avrc_ct_cb);
 
     esp_a2d_register_callback(a2d_cb);
-    if ((err = esp_a2d_source_init()) != ESP_OK) return err;
+    if ((err = esp_a2d_source_init()) != ESP_OK) goto fail_avrc;
 
     /* Advertise SBC on one endpoint; the sink picks the config from what we offer here.
        Sample rate is pinned to 44.1 kHz ON PURPOSE: the negotiated A2DP rate is fixed for the
@@ -428,7 +445,12 @@ esp_err_t bluetooth_init(void)
     sep.cie.sbc_info.alloc_mthd   = ESP_A2D_SBC_CIE_ALLOC_MTHD_SNR | ESP_A2D_SBC_CIE_ALLOC_MTHD_LOUDNESS;
     sep.cie.sbc_info.min_bitpool  = 2;
     sep.cie.sbc_info.max_bitpool  = 53;
-    if ((err = esp_a2d_source_register_stream_endpoint(0, &sep)) != ESP_OK) return err;
+    if ((err = esp_a2d_source_register_stream_endpoint(0, &sep)) != ESP_OK) {
+        /* AVRC must deinit before A2DP (see bluetooth_shutdown), so this pair can't ladder. */
+        esp_avrc_ct_deinit();
+        esp_a2d_source_deinit();
+        goto fail_stack;
+    }
 
     /* We initiate connections, so stay reachable but not discoverable. */
     esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
@@ -436,6 +458,14 @@ esp_err_t bluetooth_init(void)
     s_inited = true;
     ESP_LOGI(TAG, "A2DP source ready as \"%s\"", BT_DEVICE_NAME);
     return ESP_OK;
+
+fail_avrc:       esp_avrc_ct_deinit();
+fail_stack:      esp_bluedroid_disable();
+fail_bluedroid:  esp_bluedroid_deinit();
+fail_enable:     esp_bt_controller_disable();
+fail_controller: esp_bt_controller_deinit();
+    ESP_LOGE(TAG, "init failed (%s), stack unwound", esp_err_to_name(err));
+    return err;
 }
 
 esp_err_t bluetooth_shutdown(void)
@@ -452,10 +482,12 @@ esp_err_t bluetooth_shutdown(void)
         esp_bt_gap_cancel_discovery();
     }
 
-    /* Reverse of bluetooth_init(): profiles, then Bluedroid, then the controller. The known-device
-       list stays in NVS (and in s_known), so reconnection still works after the next power-up. */
-    esp_a2d_source_deinit();
+    /* Profiles, then Bluedroid, then the controller. AVRC must deinit BEFORE A2DP -- Bluedroid
+       requires it (esp_avrc_ct_deinit docs; doing it backwards logs "AVRC CT should deinit in
+       advance of A2DP" and leaves L2CAP PSMs half-deregistered). The known-device list stays in
+       NVS (and in s_known), so reconnection still works after the next power-up. */
     esp_avrc_ct_deinit();
+    esp_a2d_source_deinit();
     esp_bluedroid_disable();
     esp_bluedroid_deinit();
     esp_bt_controller_disable();

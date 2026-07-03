@@ -15,16 +15,20 @@
 #include "navigator.h"
 #include "status_bar.h"
 #include "gfx.h"
+#include "icons.h"
 
 #define N_ITEMS      4
-#define MENU_ROW_H   28
-#define MENU_Y0      (STATUS_BAR_H + 6)
-#define MENU_ARROW_X 4
-#define MENU_TEXT_X  22
+#define MENU_ROW_H   40                 /* 160px content / 4 items = 40px even slices */
+#define MENU_Y0      (STATUS_BAR_H + 12) /* symmetric top/bottom margins */
+#define MENU_ARROW_X 2
+#define MENU_ICON_X  18
+#define MENU_TEXT_X  40
 #define MENU_SCALE   2
 
 static const char *const s_labels[N_ITEMS] = { "Bluetooth", "Audio", "Screen", "Power off" };
 static screen_t         *s_targets[N_ITEMS];   /* seeded on first getter call */
+/* 16x16 type icons, parallel to s_labels; NULL until the icon exists. */
+static const uint8_t *const s_icons[N_ITEMS] = { NULL, NULL, NULL, NULL };
 static int s_sel = 0;
 
 static void noop(screen_t *self) { (void)self; }
@@ -45,10 +49,15 @@ static void menu_render(screen_t *self)
 {
     (void)self;
     gfx_clear(GFX_BLACK);
+    gfx_color_t accent = gfx_rgb(255, 0, 0);   /* Settings = red */
     for (int i = 0; i < N_ITEMS; i++) {
         int y = MENU_Y0 + i * MENU_ROW_H;
-        if (i == s_sel)
-            gfx_draw_text(MENU_ARROW_X, y, ">", gfx_rgb(255, 0, 0), MENU_SCALE);   /* Settings = red */
+        bool sel = (i == s_sel);
+        if (sel)
+            gfx_draw_text(MENU_ARROW_X, y, ">", accent, MENU_SCALE);
+        if (s_icons[i])
+            gfx_blit_1bpp(MENU_ICON_X, y - 1, 16, 16,
+                          s_icons[i], sel ? accent : GFX_WHITE);   /* -1: center 16px icon on 14px text */
         gfx_draw_text(MENU_TEXT_X, y, s_labels[i], GFX_WHITE, MENU_SCALE);
     }
 }

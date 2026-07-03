@@ -1,6 +1,7 @@
 #include "storage_screen.h"
 #include "navigator.h"
 #include "gfx.h"
+#include "icons.h"
 #include "status_bar.h"
 #include "storage.h"
 #include "sdcard.h"
@@ -19,8 +20,9 @@
 #define FB_CONTENT_Y  STATUS_BAR_H          /* 16 */
 #define FB_ROW_H      12
 #define FB_VISIBLE    12                     /* rows × 12px = 144px of content */
-#define FB_ARROW_X    4
-#define FB_TEXT_X     14
+#define FB_ARROW_X    0
+#define FB_ICON_X     7
+#define FB_TEXT_X     18
 #define FB_DIVIDER_Y  161
 #define FB_PATH_Y     163
 
@@ -248,7 +250,7 @@ static void render_browse(screen_t *self)
     }
 
     /* max chars that fit in the name column */
-    int max_name = (GFX_W - FB_TEXT_X) / GFX_CHAR_W; /* (176-14)/6 = 27 */
+    int max_name = (GFX_W - FB_TEXT_X) / GFX_CHAR_W; /* (176-18)/6 = 26 */
 
     gfx_color_t accent = gfx_rgb(0, 255, 0); /* Storage menu accent (see root_menu) */
 
@@ -259,14 +261,17 @@ static void render_browse(screen_t *self)
 
         fb_entry_t *e = &s_entries[idx];
 
-        /* ">" caret marks the selection (no full white bar: power). The caret
-           replaces the "/" dir marker on the selected row; dirs stay green. */
+        /* ">" caret marks the selection (no full white bar: power); every row
+           gets a type icon: folder for dirs, song for audio files. Names stay
+           white; the selected row's icon turns accent green. */
         if (sel)
             gfx_draw_text(FB_ARROW_X, y + 2, ">", accent, 1);
-        else if (e->is_dir)
-            gfx_draw_text(FB_ARROW_X, y + 2, "/", accent, 1);
 
-        gfx_color_t name_color = e->is_dir ? accent : GFX_WHITE;
+        gfx_color_t name_color = GFX_WHITE;
+
+        gfx_blit_1bpp(FB_ICON_X, y + 2, ICON_FOLDER_W, ICON_FOLDER_H,
+                      e->is_dir ? icon_folder : icon_song,
+                      sel ? accent : GFX_WHITE);
 
         /* Split "01 - " prefix (pinned) from the scrollable body. */
         int prefix   = name_prefix_len(e->name);

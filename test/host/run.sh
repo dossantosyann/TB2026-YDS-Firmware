@@ -14,10 +14,11 @@ cc -std=c11 -Wall -Wextra \
 
 "$here/gfx_test"
 
-# navigator: asserts push/pop/tick dispatch (pure C, no fakes needed)
+# navigator: asserts push/pop/tick dispatch (fakes: FreeRTOS tick macros for refresh_ms)
 cc -std=c11 -Wall -Wextra \
    -I"$root/components/ui" \
-   "$root/components/ui/navigator.c" "$here/navigator_test.c" \
+   -I"$here/fakes" \
+   "$root/components/ui/navigator.c" "$here/fakes/status_bar_stub.c" "$here/navigator_test.c" \
    -o "$here/navigator_test"
 
 "$here/navigator_test"
@@ -29,7 +30,8 @@ cc -std=c11 -Wall -Wextra \
    -I"$root/components/drivers/display_oled" \
    -I"$here/fakes" \
    "$root/components/ui/gfx.c" "$root/components/ui/navigator.c" \
-   "$root/components/screens/menu_screen.c" "$here/menu_screen_test.c" \
+   "$root/components/screens/menu_screen.c" "$here/fakes/status_bar_stub.c" \
+   "$here/menu_screen_test.c" \
    -o "$here/menu_screen_test"
 
 "$here/menu_screen_test"
@@ -49,7 +51,8 @@ cc -std=c11 -Wall -Wextra \
    "$root/components/ui/navigator.c" \
    "$root/components/screens/audio/music_screen.c" "$root/components/screens/storage/storage_screen.c" \
    "$root/components/screens/stats/stats_screen.c" "$root/components/screens/settings/settings_screen.c" \
-   "$root/components/screens/root_menu.c" "$here/root_menu_test.c" \
+   "$root/components/screens/root_menu.c" "$here/fakes/status_bar_stub.c" \
+   "$here/root_menu_test.c" \
    -o "$here/root_menu_test"
 
 "$here/root_menu_test"

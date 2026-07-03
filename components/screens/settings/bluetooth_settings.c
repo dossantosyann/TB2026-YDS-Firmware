@@ -56,6 +56,7 @@ static bool s_powered;    /* the radio is up (we called bluetooth_init this sess
 static bool          s_connecting;
 static esp_bd_addr_t s_connecting_bda;
 static bool          s_blink;      /* toggles each rendered frame -> the connecting dot blinks */
+static const char   *s_error;      /* last failed action, drawn on the bottom line (NULL = none) */
 
 /* Device-options popup */
 static bool               s_popup;
@@ -104,12 +105,15 @@ static bool is_connecting_dev(const esp_bd_addr_t bda)
            memcmp(s_connecting_bda, bda, ESP_BD_ADDR_LEN) == 0;
 }
 
-/* Ensure the radio is up before a scan/connect. */
-static void power_on(void)
+/* Ensure the radio is up before a scan/connect. False (with s_error set) when the stack failed
+   to come up -- callers must then skip the scan/connect instead of firing it at a dead radio. */
+static bool power_on(void)
 {
     if (!s_powered) {
         if (bluetooth_init() == ESP_OK) s_powered = true;
+        else                            s_error = "Bluetooth init failed";
     }
+    return s_powered;
 }
 
 /* True only when audio the user hears is actually going over Bluetooth (BT is the active output and
@@ -127,8 +131,9 @@ static bool bt_audio_active(void)
 static void start_scan(void)
 {
     if (bt_audio_active()) player_pause();
-    power_on();
-    bluetooth_scan_start();
+    s_error      = NULL;
+    s_connecting = false;              /* a new action clears a stale "Connection failed" line */
+    if (power_on()) bluetooth_scan_start();
 }
 
 /* ---- rendering ------------------------------------------------------------------- */
@@ -245,9 +250,22 @@ static void render_list(screen_t *self)
     #undef ROW_Y
     #undef SHOWN
 
-    /* Live refresh only while there is something to watch; otherwise block (no wake-ups). */
+    /* Failure feedback on the bottom line: an action error (s_error) or a connect we issued that
+       resolved to FAILED. Cleared by the next scan/connect. */
+    const char *msg = s_error;
+    if (!msg && s_connecting && bluetooth_get_conn_state() == BLUETOOTH_CONN_FAILED)
+        msg = "Connection failed";
+    if (msg) {
+        int y = GFX_H - LINE_H;
+        gfx_fill_rect(0, y - 2, GFX_W, LINE_H + 2, GFX_BLACK);
+        gfx_draw_text(TEXT_X, y, msg, ACCENT, 1);
+    }
+
+    /* Live refresh only while there is something to watch; otherwise block (no wake-ups).
+       Connected counts: the status dot must turn red on its own if the link drops. */
     self->refresh_ms = (bluetooth_is_scanning() ||
-                        bluetooth_get_conn_state() == BLUETOOTH_CONN_CONNECTING) ? REFRESH_MS : 0;
+                        bluetooth_get_conn_state() == BLUETOOTH_CONN_CONNECTING ||
+                        bluetooth_is_connected()) ? REFRESH_MS : 0;
 }
 
 /* Centered popup over the list: device name, then Connect/Disconnect and Forget. */
@@ -324,8 +342,9 @@ static void activate(void)
         }
         break;
     case ROW_NEAR:
-        power_on();
-        bluetooth_connect(s_near[idx].bda);
+        s_error = NULL;
+        if (!power_on()) break;
+        if (bluetooth_connect(s_near[idx].bda) != ESP_OK) { s_error = "Connect failed"; break; }
         memcpy(s_connecting_bda, s_near[idx].bda, ESP_BD_ADDR_LEN);
         s_connecting = true;
         break;
@@ -338,10 +357,15 @@ static void popup_activate(void)
         if (is_connected_dev(s_popup_dev.bda)) {
             bluetooth_disconnect();
         } else {
-            power_on();
-            bluetooth_connect(s_popup_dev.bda);
-            memcpy(s_connecting_bda, s_popup_dev.bda, ESP_BD_ADDR_LEN);
-            s_connecting = true;
+            s_error = NULL;
+            if (power_on()) {
+                if (bluetooth_connect(s_popup_dev.bda) != ESP_OK) {
+                    s_error = "Connect failed";
+                } else {
+                    memcpy(s_connecting_bda, s_popup_dev.bda, ESP_BD_ADDR_LEN);
+                    s_connecting = true;
+                }
+            }
         }
     } else {                                /* Forget */
         bluetooth_forget_device(s_popup_dev.bda);
@@ -397,6 +421,7 @@ static void bt_on_enter(screen_t *self)
     s_popup        = false;
     s_scan_confirm = false;
     s_connecting   = false;
+    s_error        = NULL;
     s_sel     = 0;
     s_top     = 0;
 }

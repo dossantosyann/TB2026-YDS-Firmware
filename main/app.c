@@ -73,10 +73,22 @@ void app_init(void)
     ESP_ERROR_CHECK(player_init());
 }
 
-void app_run(void)
+/* UI task sizing: core 1 keeps the UI away from the BT controller + Bluedroid + SBC
+   encoding that saturate core 0 while streaming; priority 5 stays below the audio task
+   (22) so rendering never starves playback. 8 KiB covers the deepest UI path (screen
+   render -> track_meta_read -> FATFS -> SD SPI) plus interrupt frames — the 3.5 KiB
+   main-task stack this loop used to run on overflowed there. */
+#define UI_TASK_STACK 8192
+#define UI_TASK_PRIO  5
+#define UI_TASK_CORE  1
+
+static void ui_task(void *arg)
 {
-    /* Bring up the panel (it owns its SPI device) and the button path, then hand the
-       screen over to the navigator. */
+    (void)arg;
+
+    /* Bring up the panel (it owns its SPI device) and the button path from this task,
+       so their interrupts are allocated on core 1 too, then hand the screen over to
+       the navigator. */
     spi_device_handle_t disp_spi;
     ESP_ERROR_CHECK(spi_bus_display_init(&disp_spi));
     ESP_ERROR_CHECK(display_oled_init(disp_spi));
@@ -95,7 +107,7 @@ void app_run(void)
     status_bar_draw();
     gfx_flush();
 
-    /* UI task: wait for input (no busy-poll = idle CPU between presses), dispatch each
+    /* UI loop: wait for input (no busy-poll = idle CPU between presses), dispatch each
        event to the top screen, then present the frame it drew. A live screen (one with
        refresh_ms > 0, e.g. the stats pages) shortens the wait so it gets re-rendered on
        its timer; every other screen blocks indefinitely and costs no periodic wake-up. */
@@ -108,4 +120,12 @@ void app_run(void)
         }
         gfx_flush();
     }
+}
+
+void app_run(void)
+{
+    /* Hand the UI over to its own task and return: app_main's exit deletes the main
+       task, whose undersized stack the UI loop used to overflow. */
+    xTaskCreatePinnedToCore(ui_task, "ui", UI_TASK_STACK, NULL, UI_TASK_PRIO, NULL,
+                            UI_TASK_CORE);
 }

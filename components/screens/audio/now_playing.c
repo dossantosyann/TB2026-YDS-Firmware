@@ -231,7 +231,16 @@ static void render(screen_t *self)
     draw_scrolled(ARTIST_Y, artist, 1, &s_artist_sc, GFX_WHITE);
     draw_scrolled(ALBUM_Y,  album,  1, &s_album_sc,  GFX_WHITE);
 
-    if (s_meta.rate_hz > 0) {
+    if (status.track_unsupported) {
+        /* The output refused the track's format (non-44.1 kHz over Bluetooth): explain the
+           stop. Drawn in the quality line's spot, which is empty when nothing is playing. */
+        const char *m1 = "Track not playable";
+        const char *m2 = "BT: 44.1 kHz only";
+        gfx_draw_text((CONT_W - (int)strlen(m1) * GFX_CHAR_W) / 2, QUALITY_Y,
+                      m1, gfx_rgb(255, 170, 0), 1);
+        gfx_draw_text((CONT_W - (int)strlen(m2) * GFX_CHAR_W) / 2, QUALITY_Y + 10,
+                      m2, gfx_rgb(255, 170, 0), 1);
+    } else if (s_meta.rate_hz > 0) {
         char q[24];
         snprintf(q, sizeof q, "%lu Hz / %u-bit",
                  (unsigned long)s_meta.rate_hz, s_meta.bits);
