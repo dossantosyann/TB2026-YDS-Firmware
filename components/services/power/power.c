@@ -7,6 +7,7 @@
 #include "board_pins.h"
 #include "fuel_gauge.h"
 #include "gpio_expander.h"
+#include "settings.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,6 +27,19 @@ static const char *TAG = "power";
 
 static power_state_t          s_state;          /* zero-init: valid=false until the first good read */
 static power_shutdown_hook_t  s_shutdown_hook;  /* NULL until registered */
+
+/* Power-saving timeouts (user preferences, persisted in NVS via the settings service).
+   Both are cached lazily on first read so the hot paths that consult them every loop
+   (the UI task, the maintenance idle watch) never touch flash. 0 means "disabled". */
+#define SLEEP_MS_KEY        "sleep_ms"
+#define POWEROFF_MS_KEY     "poweroff_ms"
+#define SLEEP_MS_DEFAULT    30000u          /* screen off after 30 s idle */
+#define POWEROFF_MS_DEFAULT 300000u         /* auto power-off after 5 min idle */
+
+static uint32_t s_sleep_ms;                 /* UINT32_MAX until loaded from NVS */
+static uint32_t s_poweroff_ms;
+static bool     s_sleep_loaded;
+static bool     s_poweroff_loaded;
 
 void power_self_hold(void)
 {
@@ -102,6 +116,38 @@ void power_usb_autoroute_start(void)
 void power_set_shutdown_hook(power_shutdown_hook_t hook)
 {
     s_shutdown_hook = hook;
+}
+
+uint32_t power_get_sleep_ms(void)
+{
+    if (!s_sleep_loaded) {
+        if (settings_get_u32(SLEEP_MS_KEY, &s_sleep_ms) != ESP_OK) s_sleep_ms = SLEEP_MS_DEFAULT;
+        s_sleep_loaded = true;
+    }
+    return s_sleep_ms;
+}
+
+void power_set_sleep_ms(uint32_t ms)
+{
+    s_sleep_ms = ms;
+    s_sleep_loaded = true;
+    settings_set_u32(SLEEP_MS_KEY, ms);
+}
+
+uint32_t power_get_poweroff_ms(void)
+{
+    if (!s_poweroff_loaded) {
+        if (settings_get_u32(POWEROFF_MS_KEY, &s_poweroff_ms) != ESP_OK) s_poweroff_ms = POWEROFF_MS_DEFAULT;
+        s_poweroff_loaded = true;
+    }
+    return s_poweroff_ms;
+}
+
+void power_set_poweroff_ms(uint32_t ms)
+{
+    s_poweroff_ms = ms;
+    s_poweroff_loaded = true;
+    settings_set_u32(POWEROFF_MS_KEY, ms);
 }
 
 void power_shutdown(void)

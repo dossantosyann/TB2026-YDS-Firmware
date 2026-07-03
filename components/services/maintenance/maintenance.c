@@ -24,12 +24,11 @@
 
 static const char *TAG = "maint";
 
-/* Auto power-off: release the rail after this long without a button press, provided
+/* Auto power-off: release the rail after an idle stretch without a button press, provided
    nothing is playing (a pause counts as not playing; its position is saved first).
    Skipped while USB is plugged in — the charger latches the regulator, so releasing
-   EnableReg couldn't cut the rail anyway and would just park the firmware. Hardcoded
-   for now; meant to become a user-adjustable setting once the settings menu exists. */
-#define POWER_OFF_TIMEOUT_MS (5 * 60 * 1000)
+   EnableReg couldn't cut the rail anyway and would just park the firmware. The timeout is
+   a user preference (power_get_poweroff_ms(), Settings > Power); 0 disables it. */
 
 static TaskHandle_t s_task;
 
@@ -82,7 +81,9 @@ static void sd_watch(void)
 
 static void power_off_watch(void)
 {
-    if (input_idle_ms() < POWER_OFF_TIMEOUT_MS) return;
+    uint32_t off_ms = power_get_poweroff_ms();
+    if (off_ms == 0) return;                      /* auto power-off disabled */
+    if (input_idle_ms() < off_ms) return;
 
     player_status_t st;
     player_get_state(&st);

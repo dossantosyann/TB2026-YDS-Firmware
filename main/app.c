@@ -110,9 +110,8 @@ void app_init(void)
    frame with a dim hint text, so a locked device is distinguishable from a powered-off
    one. Only A (SELECT) unlocks — the waking press is swallowed — and every other button
    is ignored, so pocket presses do nothing. Playback and the volume pot are untouched
-   (they live in the audio/maintenance tasks). Hardcoded for now; meant to become a
-   user-adjustable setting once the settings menu exists. */
-#define SCREEN_OFF_TIMEOUT_MS 30000
+   (they live in the audio/maintenance tasks). The timeout is a user preference
+   (power_get_sleep_ms(), Settings > Power); 0 disables the lock entirely. */
 
 /* While locked, redraw the hint at a slightly shifted position on this period so no
    pixel ages faster than its neighbours (OLED burn-in). Each redraw is one frame
@@ -198,16 +197,19 @@ static void ui_task(void *arg)
         TickType_t wait = pdMS_TO_TICKS(LOCK_SHIFT_MS);   /* locked: next hint shift */
         bool live = false;                                /* a live screen this iteration? */
         if (screen_on) {
+            uint32_t sleep_ms = power_get_sleep_ms();     /* 0 = never sleep */
             uint32_t idle = input_idle_ms();
-            if (idle >= SCREEN_OFF_TIMEOUT_MS) {
+            if (sleep_ms != 0 && idle >= sleep_ms) {
                 lock_phase = 0;
                 draw_lock_screen(lock_phase);
                 screen_on = false;
             } else {
-                TickType_t left = pdMS_TO_TICKS(SCREEN_OFF_TIMEOUT_MS - idle) + 1;
                 wait = navigator_refresh_ticks();
                 live = wait != portMAX_DELAY;             /* re-renders within refresh_ms */
-                if (left < wait) wait = left;
+                if (sleep_ms != 0) {                       /* cap the wait at the sleep deadline */
+                    TickType_t left = pdMS_TO_TICKS(sleep_ms - idle) + 1;
+                    if (left < wait) wait = left;
+                }
             }
         }
 

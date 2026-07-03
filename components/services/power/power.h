@@ -19,6 +19,7 @@
 
 #include "esp_err.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * @defgroup services_power Power service
@@ -117,5 +118,26 @@ void power_set_shutdown_hook(power_shutdown_hook_t hook);
  * this never returns. If USB is still latching the regulator on, power stays up.
  */
 void power_shutdown(void) __attribute__((noreturn));
+
+/**
+ * @name Power-saving timeouts (user preferences, persisted in NVS)
+ *
+ * Idle durations, in milliseconds, driving the two power-saving policies. Both are
+ * cached on first read (no flash access on the hot paths that poll them) and 0 means
+ * the policy is disabled ("Never"). Setters persist the new value immediately.
+ * @{
+ */
+
+/** @brief Idle time before the screen blanks (UI task). 0 = never sleep. */
+uint32_t power_get_sleep_ms(void);
+/** @brief Set and persist the screen-sleep timeout. @see power_get_sleep_ms */
+void     power_set_sleep_ms(uint32_t ms);
+
+/** @brief Idle time before the board auto powers off (maintenance task). 0 = never. */
+uint32_t power_get_poweroff_ms(void);
+/** @brief Set and persist the auto power-off timeout. @see power_get_poweroff_ms */
+void     power_set_poweroff_ms(uint32_t ms);
+
+/** @} */
 
 /** @} */
