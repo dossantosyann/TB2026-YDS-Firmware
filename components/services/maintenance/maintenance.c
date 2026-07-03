@@ -10,6 +10,8 @@
 #include "playlist.h"
 #include "storage.h"
 #include "sdcard.h"
+#include "input.h"
+#include "settings.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -21,6 +23,13 @@
 #define MAINT_SD_DIV      5     /* card-detect sample every 500 ms */
 
 static const char *TAG = "maint";
+
+/* Auto power-off: release the rail after this long without a button press, provided
+   nothing is playing (a pause counts as not playing; its position is saved first).
+   Skipped while USB is plugged in — the charger latches the regulator, so releasing
+   EnableReg couldn't cut the rail anyway and would just park the firmware. Hardcoded
+   for now; meant to become a user-adjustable setting once the settings menu exists. */
+#define POWER_OFF_TIMEOUT_MS (5 * 60 * 1000)
 
 static TaskHandle_t s_task;
 
@@ -71,6 +80,33 @@ static void sd_watch(void)
     }
 }
 
+static void power_off_watch(void)
+{
+    if (input_idle_ms() < POWER_OFF_TIMEOUT_MS) return;
+
+    player_status_t st;
+    player_get_state(&st);
+    if (st.state == PLAYER_PLAYING) return;
+
+    power_state_t pw;
+    power_get_state(&pw);
+    if (pw.external_power) return;   /* USB latches the regulator: can't power off */
+
+    ESP_LOGW(TAG, "idle with no playback, powering off");
+    if (st.state == PLAYER_PAUSED) {
+        /* Resume info for a future boot: the path survives an SD re-scan, an index
+           wouldn't. Restoring it at boot is not wired yet. */
+        settings_set_str("last_path", st.track.path);
+        settings_set_u32("last_pos", st.elapsed_ms);
+    }
+    player_stop();
+    /* pipeline_stop is queued to the audio task: give it time to process the
+       command and close its file before the volume goes away (same as sd_watch). */
+    vTaskDelay(pdMS_TO_TICKS(200));
+    storage_unmount();
+    power_shutdown();   /* runs the amp/DAC-off hook, releases EnableReg; no return */
+}
+
 static void maintenance_task(void *arg)
 {
     (void)arg;
@@ -79,7 +115,7 @@ static void maintenance_task(void *arg)
     for (;;) {
         volume_poll(NULL, NULL);
         player_poll();
-        if (++pwr >= MAINT_PWR_DIV) { power_tick(); pwr = 0; }
+        if (++pwr >= MAINT_PWR_DIV) { power_tick(); power_off_watch(); pwr = 0; }
         if (++sd >= MAINT_SD_DIV) { sd_watch(); sd = 0; }
         vTaskDelay(period);
     }

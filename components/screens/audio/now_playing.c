@@ -200,8 +200,20 @@ static void render(screen_t *self)
     player_status_t status = {0};
     player_get_state(&status);
 
-    /* refresh metadata on track change */
-    const char *path = (status.state != PLAYER_STOPPED) ? status.track.path : NULL;
+    /* refresh metadata on track change. When stopped, fall back to the playlist's
+       current track (e.g. re-selected at boot after an auto power-off): it is what
+       SELECT on play would start. */
+    const char *path = NULL, *name = NULL;
+    if (status.state != PLAYER_STOPPED) {
+        path = status.track.path;
+        name = status.track.name;
+    } else {
+        playlist_track_t cur;
+        if (playlist_current(&cur) == ESP_OK) {
+            path = cur.path;
+            name = cur.name;
+        }
+    }
     if (path && strncmp(s_cached_path, path, CACHED_PATH_MAX) != 0) {
         strncpy(s_cached_path, path, CACHED_PATH_MAX - 1);
         s_cached_path[CACHED_PATH_MAX - 1] = '\0';
@@ -223,7 +235,7 @@ static void render(screen_t *self)
 
     /* track metadata */
     const char *title  = s_meta.title[0]  ? s_meta.title
-                       : (path ? status.track.name : "---");
+                       : (path ? name : "---");
     const char *artist = s_meta.artist;
     const char *album  = s_meta.album;
 

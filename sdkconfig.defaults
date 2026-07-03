@@ -16,3 +16,7 @@ CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=255
 # Custom partition table (partitions.csv): 4MB app instead of the 1MB default.
 CONFIG_PARTITION_TABLE_CUSTOM=y
+# Power management: DFS (esp_pm_configure 80<->160 MHz in app_init). Drivers take
+# APB/CPU locks while active, so audio is unaffected. No tickless/light sleep: it
+# would stop I2S, and the BT low-power clock needs a 32 kHz crystal we don't have.
+CONFIG_PM_ENABLE=y
