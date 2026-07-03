@@ -30,6 +30,7 @@
 
 #define FB_MAX_ENTRIES 64
 #define FB_NAME_MAX    128
+#define FB_MAX_DEPTH   16   /* saved cursor positions per folder level */
 
 typedef struct {
     char name[FB_NAME_MAX];
@@ -44,6 +45,11 @@ static int        s_count;
 static int        s_sel;
 static int        s_top;
 static fb_state_t s_state;
+
+/* Cursor (selection + scroll) of each parent folder we descended through, so
+   leaving a folder restores where we were. */
+static struct { int sel; int top; } s_hist[FB_MAX_DEPTH];
+static int s_depth;
 static int        s_action_sel;    /* BROWSE: unused; ACTION: 0=Play,1=Delete; CONFIRM: 0=Yes,1=No */
 static int        s_marquee_offset; /* char offset into the selected item's name */
 static int        s_marquee_tick;   /* ticks since last offset change */
@@ -96,6 +102,11 @@ static void scan_current(void)
 
 static void enter_dir(const char *name)
 {
+    if (s_depth < FB_MAX_DEPTH) {
+        s_hist[s_depth].sel = s_sel;
+        s_hist[s_depth].top = s_top;
+    }
+    s_depth++;
     strlcat(s_path, "/", sizeof s_path);
     strlcat(s_path, name, sizeof s_path);
     scan_current();
@@ -110,6 +121,15 @@ static void leave_dir(void)
     char *slash = strrchr(s_path, '/');
     if (slash) *slash = '\0';
     scan_current();
+
+    if (s_depth > 0) s_depth--;
+    if (s_depth < FB_MAX_DEPTH) {
+        s_sel = s_hist[s_depth].sel;
+        s_top = s_hist[s_depth].top;
+        /* clamp in case entries changed (e.g. a delete) while we were away */
+        if (s_sel >= s_count) s_sel = s_count ? s_count - 1 : 0;
+        if (s_top > s_sel)    s_top = s_sel;
+    }
 }
 
 /* Build s_path + "/" + name into dst[dst_sz]. Returns false if it wouldn't fit. */
@@ -365,6 +385,7 @@ static void reset_to_root(void)
     strlcpy(s_path, SDCARD_MOUNT_POINT, sizeof s_path);
     s_state      = FB_BROWSE;
     s_action_sel = 0;
+    s_depth      = 0;
     scan_current();
 }
 
