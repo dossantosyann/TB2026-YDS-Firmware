@@ -20,11 +20,15 @@
 #define POT_BITWIDTH  ADC_BITWIDTH_DEFAULT  // 12-bit on ESP32
 
 /* PCM5242 digital-volume scale: register 0x00 = +24 dB, -0.5 dB per step. */
-#define DAC_GAIN_MAX_DB   (24.0f)
+#define DAC_REG0_DB       (24.0f)   /* hardware fact: register 0x00 = +24 dB */
 #define DAC_DB_PER_STEP   (0.5f)
 
+/* Loudest gain the knob reaches at maximum. Capped at 0 dB (not the +24 dB the DAC allows)
+   to avoid the harsh, ear-damaging saturation of positive digital gain. */
+#define DAC_MAX_DB        (-20.0f)
+
 /* Quietest gain the knob reaches at minimum, instead of the DAC's true mute. */
-#define POT_FLOOR_DB      (-60)
+#define POT_FLOOR_DB      (-100.0f)
 
 static adc_cali_handle_t s_cali = NULL;
 
@@ -72,9 +76,10 @@ uint8_t adc_pot_to_volume(int mv)
 #if POT_INVERTED
     vol = 1.0f - vol;
 #endif
-    // Louder = lower register byte: vol=1 -> 0x00 (+24 dB), vol=0 -> POT_FLOOR_DB.
-    const float floor_reg = (DAC_GAIN_MAX_DB - POT_FLOOR_DB) / DAC_DB_PER_STEP;
-    return (uint8_t)lroundf((1.0f - vol) * floor_reg);
+    // Louder = lower register byte. vol=1 -> ceil_reg (DAC_MAX_DB), vol=0 -> floor_reg (POT_FLOOR_DB).
+    const float ceil_reg  = (DAC_REG0_DB - DAC_MAX_DB)   / DAC_DB_PER_STEP;
+    const float floor_reg = (DAC_REG0_DB - POT_FLOOR_DB) / DAC_DB_PER_STEP;
+    return (uint8_t)lroundf(floor_reg - vol * (floor_reg - ceil_reg));
 }
 
 uint8_t adc_pot_to_avrcp_volume(int mv)
