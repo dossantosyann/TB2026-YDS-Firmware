@@ -312,3 +312,27 @@ const uint8_t icon_arrow_down[8] = {
     0x3C,
     0x18
 };
+
+/* folder.png: 8x8, 1 bpp, MSB-first, stride 1 bytes/row. */
+const uint8_t icon_folder[8] = {
+    0x00,
+    0xF0,
+    0x9F,
+    0x81,
+    0x81,
+    0x81,
+    0x81,
+    0xFF
+};
+
+/* song.png: 8x8, 1 bpp, MSB-first, stride 1 bytes/row. */
+const uint8_t icon_song[8] = {
+    0x1E,
+    0x1F,
+    0x11,
+    0x10,
+    0x70,
+    0xF0,
+    0xF0,
+    0x60
+};

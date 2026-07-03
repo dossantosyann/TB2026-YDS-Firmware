@@ -65,3 +65,13 @@ extern const uint8_t icon_arrow_up[];
 #define ICON_ARROW_DOWN_W 8
 #define ICON_ARROW_DOWN_H 8
 extern const uint8_t icon_arrow_down[];
+
+/* folder.png: 8x8, 1 bpp, MSB-first. */
+#define ICON_FOLDER_W 8
+#define ICON_FOLDER_H 8
+extern const uint8_t icon_folder[];
+
+/* song.png: 8x8, 1 bpp, MSB-first. */
+#define ICON_SONG_W 8
+#define ICON_SONG_H 8
+extern const uint8_t icon_song[];
