@@ -13,7 +13,8 @@
 #define PB_CONTENT_Y  STATUS_BAR_H          /* 16 */
 #define PB_ROW_H      12
 #define PB_VISIBLE    12                     /* rows × 12px = 144px of content */
-#define PB_TEXT_X     4
+#define PB_ARROW_X    4
+#define PB_TEXT_X     14
 
 /* ---- state ----------------------------------------------------------------- */
 
@@ -110,7 +111,7 @@ static void render_browse(screen_t *self)
     }
     if (s_sel >= len) { s_sel = len - 1; adjust_scroll(); }
 
-    int max_name = (GFX_W - PB_TEXT_X) / GFX_CHAR_W; /* (176-4)/6 = 28 */
+    int max_name = (GFX_W - PB_TEXT_X) / GFX_CHAR_W; /* (176-14)/6 = 27 */
 
     for (int i = 0; i < PB_VISIBLE && (s_top + i) < len; i++) {
         int  row = s_top + i;
@@ -120,11 +121,11 @@ static void render_browse(screen_t *self)
         playlist_track_t t = {0};
         if (playlist_queue_at((size_t)row, &t) != ESP_OK || !t.name) continue;
 
-        if (sel) gfx_fill_rect(0, y, GFX_W, PB_ROW_H, GFX_WHITE);
+        /* ">" caret in the Music accent marks the selection (no full white bar: power) */
+        if (sel) gfx_draw_text(PB_ARROW_X, y + 2, ">", gfx_rgb(0, 100, 255), 1);
 
-        /* row 0 is the current (locked) track: accent it when not selected */
-        gfx_color_t fg = sel ? GFX_BLACK
-                        : (row == 0 ? gfx_rgb(100, 180, 255) : GFX_WHITE);
+        /* row 0 is the current (locked) track: always accented */
+        gfx_color_t fg = (row == 0) ? gfx_rgb(100, 180, 255) : GFX_WHITE;
 
         int name_len = (int)strlen(t.name);
         if (sel && name_len > max_name) {
@@ -168,15 +169,12 @@ static void render_action(screen_t *self)
         int  y     = PB_POPUP_Y + 20 + i * 16;
         bool sel   = (i == s_action_sel);
         bool valid = action_valid(i, len);
-        if (sel && valid) {
-            gfx_fill_rect(PB_POPUP_X + 4, y - 1, PB_POPUP_W - 8, 14, GFX_WHITE);
-            gfx_draw_text(PB_POPUP_X + 10, y + 2, s_action_labels[i], GFX_BLACK, 1);
-        } else {
-            gfx_color_t c = valid ? (sel ? GFX_WHITE : gfx_rgb(200, 200, 200))
-                                  : gfx_rgb(80, 80, 80);
-            if (sel) gfx_draw_rect(PB_POPUP_X + 4, y - 1, PB_POPUP_W - 8, 14, gfx_rgb(140, 140, 140));
-            gfx_draw_text(PB_POPUP_X + 10, y + 2, s_action_labels[i], c, 1);
-        }
+        if (sel)
+            gfx_draw_text(PB_POPUP_X + 4, y + 2, ">",
+                          valid ? gfx_rgb(0, 100, 255) : gfx_rgb(80, 80, 80), 1);
+        gfx_color_t c = !valid ? gfx_rgb(80, 80, 80)
+                       : (sel ? GFX_WHITE : gfx_rgb(200, 200, 200));
+        gfx_draw_text(PB_POPUP_X + 10, y + 2, s_action_labels[i], c, 1);
     }
 }
 

@@ -250,23 +250,23 @@ static void render_browse(screen_t *self)
     /* max chars that fit in the name column */
     int max_name = (GFX_W - FB_TEXT_X) / GFX_CHAR_W; /* (176-14)/6 = 27 */
 
+    gfx_color_t accent = gfx_rgb(0, 255, 0); /* Storage menu accent (see root_menu) */
+
     for (int i = 0; i < FB_VISIBLE && (s_top + i) < s_count; i++) {
         int idx = s_top + i;
         int y   = FB_CONTENT_Y + i * FB_ROW_H;
         bool sel = (idx == s_sel);
 
-        if (sel) gfx_fill_rect(0, y, GFX_W, FB_ROW_H, GFX_WHITE);
-
-        gfx_color_t fg = sel ? GFX_BLACK : GFX_WHITE;
-        gfx_color_t dir_color = sel ? GFX_BLACK : gfx_rgb(0, 255, 0);
-
         fb_entry_t *e = &s_entries[idx];
 
-        if (e->is_dir) {
-            gfx_draw_text(FB_ARROW_X, y + 2, "/", dir_color, 1);
-        }
+        /* ">" caret marks the selection (no full white bar: power). The caret
+           replaces the "/" dir marker on the selected row; dirs stay green. */
+        if (sel)
+            gfx_draw_text(FB_ARROW_X, y + 2, ">", accent, 1);
+        else if (e->is_dir)
+            gfx_draw_text(FB_ARROW_X, y + 2, "/", accent, 1);
 
-        gfx_color_t name_color = e->is_dir ? dir_color : fg;
+        gfx_color_t name_color = e->is_dir ? accent : GFX_WHITE;
 
         /* Split "01 - " prefix (pinned) from the scrollable body. */
         int prefix   = name_prefix_len(e->name);
@@ -320,13 +320,9 @@ static void render_action(screen_t *self)
 
     for (int i = 0; i < N_ACTIONS; i++) {
         int y = POPUP_Y + 20 + i * 16;
-        bool sel = (i == s_action_sel);
-        if (sel) {
-            gfx_fill_rect(POPUP_X + 4, y - 1, POPUP_W - 8, 14, GFX_WHITE);
-            gfx_draw_text(POPUP_X + 10, y + 2, s_action_labels[i], GFX_BLACK, 1);
-        } else {
-            gfx_draw_text(POPUP_X + 10, y + 2, s_action_labels[i], GFX_WHITE, 1);
-        }
+        if (i == s_action_sel)
+            gfx_draw_text(POPUP_X + 4, y + 2, ">", gfx_rgb(0, 255, 0), 1);
+        gfx_draw_text(POPUP_X + 10, y + 2, s_action_labels[i], GFX_WHITE, 1);
     }
 }
 
@@ -350,13 +346,8 @@ static void render_confirm(screen_t *self)
         int bx = POPUP_X + 16 + i * 56;
         int by = POPUP_Y + 36;
         bool sel = (i == s_action_sel);
-        if (sel) {
-            gfx_fill_rect(bx - 4, by - 2, 40, 14, GFX_WHITE);
-            gfx_draw_text(bx + 4, by + 2, opts[i], GFX_BLACK, 1);
-        } else {
-            gfx_draw_rect(bx - 4, by - 2, 40, 14, gfx_rgb(140, 140, 140));
-            gfx_draw_text(bx + 4, by + 2, opts[i], GFX_WHITE, 1);
-        }
+        gfx_draw_rect(bx - 4, by - 2, 40, 14, sel ? gfx_rgb(0, 255, 0) : gfx_rgb(140, 140, 140));
+        gfx_draw_text(bx + 4, by + 2, opts[i], GFX_WHITE, 1);
     }
 }
 
