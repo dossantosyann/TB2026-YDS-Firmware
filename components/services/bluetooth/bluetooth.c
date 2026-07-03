@@ -10,6 +10,7 @@
 #include "esp_gap_bt_api.h"
 #include "esp_a2dp_api.h"
 #include "esp_avrc_api.h"
+#include "esp_pm.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
@@ -37,6 +38,8 @@ static const char *TAG = "bluetooth";
 #define BT_NVS_KEY_KNOWN "known"        /* blob: the s_known array (count = blob size / entry) */
 #define BT_AUTO_OFF_DELAY_MS 1000        /* link drop -> radio off: lets the stack finish the
                                             teardown and player_poll (100 ms) unwind the BT sink */
+#define BT_PROF_EVT_TIMEOUT_MS 1000      /* wait for a PROF_STATE (profile init/deinit done) event;
+                                            normally arrives within a few ms (see prof_evt_wait) */
 
 static bool               s_inited;
 static bool               s_known_loaded;     /* NVS known-list + mutex are ready (radio may be off) */
@@ -48,6 +51,8 @@ static char               s_target[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
 /* Scan results, filled by the GAP callback (BT task) and read by the UI task; s_lock guards
    both s_devices and s_device_count. */
 static SemaphoreHandle_t  s_lock;
+static SemaphoreHandle_t  s_prof_evt;    /* signalled by the PROF_STATE callbacks (see prof_evt_wait) */
+static esp_pm_lock_handle_t s_pm_lock;   /* pins the CPU clock during controller teardown; may be NULL */
 static TimerHandle_t      s_conn_timer;  /* one-shot: bounds a connect attempt (see conn_timeout_cb) */
 static bluetooth_device_t s_devices[BLUETOOTH_MAX_DEVICES];
 static size_t             s_device_count;
@@ -66,6 +71,7 @@ static volatile bool     s_vol_acked;       /* the most recent set was confirmed
 static volatile bool     s_auto_off = true; /* power the radio down when the link drops (the BT
                                                settings screen clears it while it owns the radio) */
 static volatile bool     s_off_task_live;   /* an auto_off_task is in flight (spawn at most one) */
+static volatile bool     s_reset_task_live; /* a conn_reset_task is in flight (spawn at most one) */
 
 /* Rolling AVRCP transaction label (0..15); consecutive commands should use different values. */
 static uint8_t next_tl(void)
@@ -260,16 +266,46 @@ static void remember_peer(void)
     xSemaphoreGive(s_lock);
 }
 
-/* Fires if a connect is still forming after BT_CONNECT_TIMEOUT_MS. The A2DP page attempt can
-   otherwise hang for a long time and keep the radio (and its current draw) on, so tear it down and
-   mark it failed; the resulting DISCONNECTED event confirms the state. Runs in the timer task. */
+/* Recover from a wedged connect: after a Bluedroid collision drop the ACL can survive on both
+   sides while L2CAP loses track of it, and a reconnect then gets HCI "Conn Exists" and hangs BTA
+   in OPENING -- a state where the stack ignores DISCONNECT_REQ, so esp_a2d_source_disconnect
+   cannot recover it, and Bluedroid exposes no classic-BT ACL disconnect. Power-cycling the radio
+   is the only lever that kills the zombie link. One-shot task for the same reason as
+   auto_off_task (and the timer task must not block for the ~2 s the cycle takes). */
+static void conn_reset_task(void *arg)
+{
+    (void)arg;
+    if (bluetooth_shutdown() == ESP_OK) {   /* refuses if the link formed after all */
+        esp_err_t err = bluetooth_init();
+        if (err != ESP_OK) {
+            /* The wedged A2DP deinit is deferred by Bluedroid until BTA closes the link inside
+               esp_bluedroid_disable, so its completion flag can still be armed at the first
+               re-init attempt; it clears once that close lands. */
+            vTaskDelay(pdMS_TO_TICKS(500));
+            err = bluetooth_init();
+        }
+        s_conn_state = BLUETOOTH_CONN_FAILED;  /* shutdown left IDLE; keep the failure visible */
+        ESP_LOGW(TAG, "radio power-cycled after wedged connect (re-init: %s)",
+                 esp_err_to_name(err));
+    }
+    s_reset_task_live = false;
+    vTaskDelete(NULL);
+}
+
+/* Fires if a connect is still forming after BT_CONNECT_TIMEOUT_MS. A connect that fails cleanly
+   (page timeout, refusal) reports DISCONNECTED and stops this timer first, so firing means the
+   stack is wedged (see conn_reset_task): mark it failed and power-cycle the radio. Runs in the
+   timer task. */
 static void conn_timeout_cb(TimerHandle_t t)
 {
     (void)t;
     if (s_conn_state != BLUETOOTH_CONN_CONNECTING) return;
-    ESP_LOGW(TAG, "connect timed out, aborting");
+    ESP_LOGW(TAG, "connect timed out, power-cycling the radio");
     s_conn_state = BLUETOOTH_CONN_FAILED;
-    esp_a2d_source_disconnect(s_peer_bda);
+    if (!s_reset_task_live) {
+        s_reset_task_live =
+            xTaskCreate(conn_reset_task, "bt_reset", 4096, NULL, 1, NULL) == pdPASS;
+    }
 }
 
 /* Deferred radio power-down after a link drop, so the radio never idles powered with nothing to
@@ -348,6 +384,7 @@ static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
     case ESP_A2D_PROF_STATE_EVT:
         ESP_LOGI(TAG, "A2DP profile %s",
                  param->a2d_prof_stat.init_state == ESP_A2D_INIT_SUCCESS ? "init" : "deinit");
+        xSemaphoreGive(s_prof_evt);
         break;
     case ESP_A2D_SEP_REG_STATE_EVT:
         ESP_LOGI(TAG, "SBC endpoint %d register state %d",
@@ -380,6 +417,7 @@ static void avrc_ct_cb(esp_avrc_ct_cb_event_t event, esp_avrc_ct_cb_param_t *par
     case ESP_AVRC_CT_PROF_STATE_EVT:
         ESP_LOGI(TAG, "AVRCP CT %s",
                  param->avrc_ct_init_stat.state == ESP_AVRC_INIT_SUCCESS ? "init" : "deinit");
+        xSemaphoreGive(s_prof_evt);
         break;
     default:
         break;
@@ -408,6 +446,20 @@ esp_err_t bluetooth_load_known(void)
     return ESP_OK;
 }
 
+/* Block until the stack confirms a profile init/deinit. esp_avrc_ct_init/deinit and
+   esp_a2d_source_init/deinit are ASYNCHRONOUS: they post to the BTC task and return, and the
+   Bluedroid globals gating the next call (g_a2dp_on_deinit & co.) are only updated when that task
+   processes the message. Calling the next stack API without waiting races it -- observed in the
+   field as ESP_ERR_INVALID_STATE from esp_a2d_source_register_stream_endpoint on the second radio
+   power-up (the flags survive esp_bluedroid_deinit, so only a cold boot starts clean). Every
+   waited-on call is paired with one PROF_STATE event, which gives s_prof_evt. */
+static bool prof_evt_wait(const char *what)
+{
+    if (xSemaphoreTake(s_prof_evt, pdMS_TO_TICKS(BT_PROF_EVT_TIMEOUT_MS)) == pdTRUE) return true;
+    ESP_LOGW(TAG, "%s: no PROF_STATE event within %d ms", what, BT_PROF_EVT_TIMEOUT_MS);
+    return false;
+}
+
 esp_err_t bluetooth_init(void)
 {
     if (s_inited) return ESP_OK;
@@ -420,6 +472,18 @@ esp_err_t bluetooth_init(void)
         s_conn_timer = xTimerCreate("bt_conn", pdMS_TO_TICKS(BT_CONNECT_TIMEOUT_MS),
                                     pdFALSE, NULL, conn_timeout_cb);
         if (!s_conn_timer) return ESP_ERR_NO_MEM;
+    }
+
+    /* Profile init/deinit completion signal; created once (like s_lock). */
+    if (!s_prof_evt) {
+        s_prof_evt = xSemaphoreCreateBinary();
+        if (!s_prof_evt) return ESP_ERR_NO_MEM;
+    }
+
+    /* Pins the CPU clock while the controller tears down (see bluetooth_shutdown). Best effort:
+       stays NULL (and the acquire/release are skipped) if creation fails. */
+    if (!s_pm_lock) {
+        esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "bt_teardown", &s_pm_lock);
     }
 
     /* Classic-only: hand the BLE controller RAM back to the heap. Once only -- the RAM stays freed
@@ -450,11 +514,18 @@ esp_err_t bluetooth_init(void)
     /* Page long enough to ride out a peer still holding a dead link (see BT_PAGE_TIMEOUT_SLOTS). */
     esp_bt_gap_set_page_timeout(BT_PAGE_TIMEOUT_SLOTS);
 
+    /* Callbacks first: the PROF_STATE events below would be lost if they fired before their
+       callback was registered (registration only stores a pointer, valid once Bluedroid is up). */
+    esp_avrc_ct_register_callback(avrc_ct_cb);
+    esp_a2d_register_callback(a2d_cb);
+
+    /* Drain a stale PROF_STATE from a previous cycle whose wait timed out. */
+    xSemaphoreTake(s_prof_evt, 0);
+
     /* AVRCP must be initialised before A2DP (Bluedroid requirement, see esp_avrc_ct_init docs). */
     if ((err = esp_avrc_ct_init()) != ESP_OK) goto fail_stack;
-    esp_avrc_ct_register_callback(avrc_ct_cb);
+    if (!prof_evt_wait("AVRCP CT init")) { err = ESP_ERR_TIMEOUT; goto fail_avrc; }
 
-    esp_a2d_register_callback(a2d_cb);
     if ((err = esp_a2d_source_init()) != ESP_OK) goto fail_avrc;
 
     /* Advertise SBC on one endpoint; the sink picks the config from what we offer here.
@@ -474,10 +545,14 @@ esp_err_t bluetooth_init(void)
     sep.cie.sbc_info.alloc_mthd   = ESP_A2D_SBC_CIE_ALLOC_MTHD_SNR | ESP_A2D_SBC_CIE_ALLOC_MTHD_LOUDNESS;
     sep.cie.sbc_info.min_bitpool  = 2;
     sep.cie.sbc_info.max_bitpool  = 53;
-    if ((err = esp_a2d_source_register_stream_endpoint(0, &sep)) != ESP_OK) {
+    if (!prof_evt_wait("A2DP profile init")) err = ESP_ERR_TIMEOUT;
+    else err = esp_a2d_source_register_stream_endpoint(0, &sep);
+    if (err != ESP_OK) {
         /* AVRC must deinit before A2DP (see bluetooth_shutdown), so this pair can't ladder. */
         esp_avrc_ct_deinit();
+        prof_evt_wait("AVRCP CT deinit");
         esp_a2d_source_deinit();
+        prof_evt_wait("A2DP profile deinit");
         goto fail_stack;
     }
 
@@ -489,9 +564,12 @@ esp_err_t bluetooth_init(void)
     return ESP_OK;
 
 fail_avrc:       esp_avrc_ct_deinit();
+                 prof_evt_wait("AVRCP CT deinit");
 fail_stack:      esp_bluedroid_disable();
 fail_bluedroid:  esp_bluedroid_deinit();
-fail_enable:     esp_bt_controller_disable();
+fail_enable:     if (s_pm_lock) esp_pm_lock_acquire(s_pm_lock);
+                 esp_bt_controller_disable();
+                 if (s_pm_lock) esp_pm_lock_release(s_pm_lock);
 fail_controller: esp_bt_controller_deinit();
     ESP_LOGE(TAG, "init failed (%s), stack unwound", esp_err_to_name(err));
     return err;
@@ -513,14 +591,26 @@ esp_err_t bluetooth_shutdown(void)
 
     /* Profiles, then Bluedroid, then the controller. AVRC must deinit BEFORE A2DP -- Bluedroid
        requires it (esp_avrc_ct_deinit docs; doing it backwards logs "AVRC CT should deinit in
-       advance of A2DP" and leaves L2CAP PSMs half-deregistered). The known-device list stays in
-       NVS (and in s_known), so reconnection still works after the next power-up. */
+       advance of A2DP" and leaves L2CAP PSMs half-deregistered). Each deinit is asynchronous, so
+       wait for its PROF_STATE event before the next step: tearing Bluedroid down while a deinit is
+       still in flight leaves its completion flags armed forever and bricks every re-init until
+       reboot (see prof_evt_wait). The known-device list stays in NVS (and in s_known), so
+       reconnection still works after the next power-up. */
+    xSemaphoreTake(s_prof_evt, 0);   /* drain a stale event from a previous timed-out wait */
     esp_avrc_ct_deinit();
+    prof_evt_wait("AVRCP CT deinit");
     esp_a2d_source_deinit();
+    prof_evt_wait("A2DP profile deinit");
     esp_bluedroid_disable();
     esp_bluedroid_deinit();
+
+    /* Pin the CPU clock across the controller teardown: with DFS active, a frequency switch racing
+       the disable/deinit path can leave the system with no tick source (int-WDT, both cores idle,
+       seen in the field right after "radio powered down"). */
+    if (s_pm_lock) esp_pm_lock_acquire(s_pm_lock);
     esp_bt_controller_disable();
     esp_err_t err = esp_bt_controller_deinit();
+    if (s_pm_lock) esp_pm_lock_release(s_pm_lock);
 
     s_conn_state     = BLUETOOTH_CONN_IDLE;
     s_avrc_connected = false;

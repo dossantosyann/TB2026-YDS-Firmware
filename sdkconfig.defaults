@@ -16,6 +16,11 @@ CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=255
 # Custom partition table (partitions.csv): 4MB app instead of the 1MB default.
 CONFIG_PARTITION_TABLE_CUSTOM=y
+# Task watchdog panics (resets) instead of just logging when a subscribed task fails to
+# feed within the 5 s timeout. Tasks subscribe dynamically only where a stalled loop is a
+# real softlock (audio decode, live UI render); event-driven tasks that block by design stay
+# unsubscribed. Idle-task checks (both cores) stay on: a CPU-bound spin is caught too.
+CONFIG_ESP_TASK_WDT_PANIC=y
 # Power management: DFS (esp_pm_configure 80<->160 MHz in app_init). Drivers take
 # APB/CPU locks while active, so audio is unaffected. No tickless/light sleep: it
 # would stop I2S, and the BT low-power clock needs a 32 kHz crystal we don't have.

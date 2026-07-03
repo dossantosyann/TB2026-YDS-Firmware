@@ -25,6 +25,7 @@
 #include "gfx.h"
 #include "esp_log.h"
 #include "esp_pm.h"
+#include "esp_task_wdt.h"
 #include <string.h>
 
 /* Shared I2C master bus, owned here and handed to every device on it (expander now;
@@ -191,9 +192,11 @@ static void ui_task(void *arg)
        its timer; every other screen blocks indefinitely and costs no periodic wake-up.
        The wait is also capped at the screen-off deadline so the panel blanks on time. */
     bool screen_on = true;
+    bool wdt_on = false;                                  /* UI task subscribed to the task WDT? */
     unsigned lock_phase = 0;
     for (;;) {
         TickType_t wait = pdMS_TO_TICKS(LOCK_SHIFT_MS);   /* locked: next hint shift */
+        bool live = false;                                /* a live screen this iteration? */
         if (screen_on) {
             uint32_t idle = input_idle_ms();
             if (idle >= SCREEN_OFF_TIMEOUT_MS) {
@@ -203,9 +206,17 @@ static void ui_task(void *arg)
             } else {
                 TickType_t left = pdMS_TO_TICKS(SCREEN_OFF_TIMEOUT_MS - idle) + 1;
                 wait = navigator_refresh_ticks();
+                live = wait != portMAX_DELAY;             /* re-renders within refresh_ms */
                 if (left < wait) wait = left;
             }
         }
+
+        /* Guard live screens only: they cycle every refresh_ms (<< the 5 s WDT timeout), so a
+           stuck render trips the watchdog. Static and locked screens block up to 30 s by design,
+           so they stay unsubscribed -- otherwise the wait itself would look like a softlock. */
+        if (live && !wdt_on)  { esp_task_wdt_add(NULL);    wdt_on = true;  }
+        if (!live && wdt_on)  { esp_task_wdt_delete(NULL); wdt_on = false; }
+        if (wdt_on) esp_task_wdt_reset();
 
         ui_event_t ev;
         if (!input_get_event(&ev, wait)) {

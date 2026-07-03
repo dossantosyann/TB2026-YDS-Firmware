@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,7 +85,9 @@ static void run_tone(uint32_t freq_hz)
 
     int phase = 0;
     pipe_cmd_t c;
+    esp_task_wdt_add(NULL);              /* guard the streaming loop against a stalled sink */
     for (;;) {
+        esp_task_wdt_reset();
         for (int f = 0; f < PIPE_CHUNK_FRAMES; f++) {
             int16_t s = table[phase];
             s_chunk[2 * f]     = (int32_t)s << 16;   /* L, 32-bit MSB-justified */
@@ -97,6 +100,7 @@ static void run_tone(uint32_t freq_hz)
         if (xQueueReceive(s_cmd_q, &c, 0) && c.cmd == CMD_STOP) break;
     }
 
+    esp_task_wdt_delete(NULL);
     sink->stop();
     free(table);
     ESP_LOGI(TAG, "tone: stopped");
@@ -145,7 +149,9 @@ static void run_file(const char *path)
     s_pos_rate     = fmt.rate_hz;                  /* set last: non-zero marks position valid */
     pipe_cmd_t c;
     size_t got = 0, off = 0;   /* current decode chunk and how much the sink accepted so far */
+    esp_task_wdt_add(NULL);    /* guard the decode loop; released across pause and on exit below */
     for (;;) {
+        esp_task_wdt_reset();
         if (xQueueReceive(s_cmd_q, &c, 0)) {
             if (c.cmd == CMD_STOP) { notify = false; break; }
             if (c.cmd == CMD_SWITCH_SINK) {
@@ -166,7 +172,9 @@ static void run_file(const char *path)
             if (c.cmd == CMD_PAUSE) {
                 sink->stop();                      /* path down; decoder kept open */
                 sink_on = false;
+                esp_task_wdt_delete(NULL);         /* paused: legitimately idle, don't guard */
                 do { xQueueReceive(s_cmd_q, &c, portMAX_DELAY); } while (c.cmd == CMD_PAUSE);
+                esp_task_wdt_add(NULL);            /* resuming or stopping: guard again */
                 if (c.cmd == CMD_STOP) { notify = false; break; }
                 serr = sink->start(fmt.rate_hz, fmt.bits, fmt.channels);
                 if (serr != ESP_OK) {
@@ -196,6 +204,7 @@ static void run_file(const char *path)
         s_pos_frames += (uint32_t)(written / out_frame);
     }
 
+    esp_task_wdt_delete(NULL);
     if (sink_on) sink->stop();
     decoder_close();
     s_pos_rate     = 0;                            /* nothing playing: position reads back 0/0 */
