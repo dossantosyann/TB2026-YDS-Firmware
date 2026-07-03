@@ -103,9 +103,9 @@ static void draw_corners(int x, int y, int w, int h, gfx_color_t col)
 
 static void reset_scroll(void)
 {
-    s_title_sc.offset  = 0; s_title_sc.pause  = SCROLL_PAUSE;
-    s_artist_sc.offset = 0; s_artist_sc.pause = SCROLL_PAUSE;
-    s_album_sc.offset  = 0; s_album_sc.pause  = SCROLL_PAUSE;
+    s_title_sc.offset  = 0; s_title_sc.pause  = 0;
+    s_artist_sc.offset = 0; s_artist_sc.pause = 0;
+    s_album_sc.offset  = 0; s_album_sc.pause  = 0;
 }
 
 /* Draw text clipped to [TEXT_X0, TEXT_X1), scrolling if it overflows.
@@ -127,14 +127,19 @@ static void draw_scrolled(int y, const char *text, int scale, scroll_t *sc, gfx_
     gfx_fill_rect(0,      y, TEXT_X0,         h, GFX_BLACK);
     gfx_fill_rect(TEXT_X1, y, GFX_W - TEXT_X1, h, GFX_BLACK);
 
-    if (sc->pause > 0) {
-        sc->pause--;
+    int32_t max_off  = text_px - TEXT_MAX_W;
+    bool    at_start = sc->offset <= 0;
+    bool    at_end   = sc->offset >= max_off;
+
+    if ((at_start || at_end) && sc->pause < SCROLL_PAUSE) {
+        sc->pause++;                /* hold at each end so the tail is readable */
+    } else if (at_end) {
+        sc->offset = 0;             /* wrap back to the start */
+        sc->pause  = 0;
     } else {
         sc->offset += SCROLL_SPEED;
-        if (sc->offset > text_px - TEXT_MAX_W) {
-            sc->offset = 0;
-            sc->pause  = SCROLL_PAUSE;
-        }
+        if (sc->offset > max_off) sc->offset = max_off;  /* clamp so the end shows */
+        sc->pause = 0;
     }
 }
 

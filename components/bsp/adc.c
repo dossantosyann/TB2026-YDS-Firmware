@@ -28,7 +28,7 @@
 #define DAC_MAX_DB        (-20.0f)
 
 /* Quietest gain the knob reaches at minimum, instead of the DAC's true mute. */
-#define POT_FLOOR_DB      (-100.0f)
+#define POT_FLOOR_DB      (-60.0f)
 
 static adc_cali_handle_t s_cali = NULL;
 
