@@ -10,7 +10,10 @@
  * Power: the radio is off by default. Entering this screen shows the paired list straight from NVS
  * with the radio down. It is powered up (bluetooth_init) only when the user scans or connects, and
  * powered down again (bluetooth_shutdown) on exit unless a link is up -- so it draws current only
- * while scanning or connected, per the project's power rule.
+ * while scanning or connected, per the project's power rule. While the screen is open it also
+ * suppresses the service's auto power-down on link drop (see bluetooth_set_auto_shutdown), so a
+ * manual disconnect keeps the radio up for the next action; outside the screen the service powers
+ * itself down when the link drops.
  *
  * Selecting a nearby device connects to it. Selecting a paired device opens a small popup with
  * Connect/Disconnect and Forget.
@@ -417,6 +420,9 @@ static void bt_on_enter(screen_t *self)
 {
     (void)self;
     bluetooth_load_known();                 /* paired list from NVS, radio stays off */
+    /* This screen owns the radio while open: a manual disconnect or a failed connect must keep
+       it up for the user's next action, so suppress the service's auto power-down until exit. */
+    bluetooth_set_auto_shutdown(false);
     s_powered      = bluetooth_is_connected();   /* already up if a link is live */
     s_popup        = false;
     s_scan_confirm = false;
@@ -429,6 +435,9 @@ static void bt_on_enter(screen_t *self)
 static void bt_on_exit(screen_t *self)
 {
     (void)self;
+    /* Back to the service watching the link: once we leave, a drop (or a connect still in
+       flight that fails) must power the radio down by itself. */
+    bluetooth_set_auto_shutdown(true);
     if (bluetooth_is_scanning()) bluetooth_scan_stop();
     /* Power the radio down unless a link is up (bluetooth_shutdown refuses while connected). */
     if (!bluetooth_is_connected()) {

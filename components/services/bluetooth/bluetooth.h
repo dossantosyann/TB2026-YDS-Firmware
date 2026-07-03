@@ -56,6 +56,24 @@ esp_err_t bluetooth_init(void);
 esp_err_t bluetooth_shutdown(void);
 
 /**
+ * @brief Enable/disable the automatic radio power-down when the A2DP link drops.
+ *
+ * Enabled by default: when the link disconnects (speaker powered off, out of range, or a connect
+ * attempt that fails after the UI moved on), the service powers the whole radio down by itself
+ * (deferred by ~1 s, in its own task) — otherwise a dropped link would leave the controller
+ * drawing current until the user next visits the Bluetooth screen. Consequence: a dropped speaker
+ * cannot reconnect on its own; the user reconnects from the Bluetooth screen, per the manual
+ * lifecycle this project uses.
+ *
+ * The Bluetooth settings screen disables it while it is open (it owns the radio there: a manual
+ * disconnect or a failed connect must keep the radio up for the next action) and re-enables it
+ * on exit.
+ *
+ * @param enable  true to arm the auto power-down (default), false to suppress it.
+ */
+void bluetooth_set_auto_shutdown(bool enable);
+
+/**
  * @brief Load the persisted known-device list without powering the radio up.
  *
  * The "cold" part of bluetooth_init(): creates the internal mutex and restores the known

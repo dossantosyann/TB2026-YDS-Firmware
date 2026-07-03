@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "freertos/timers.h"
 
 #include <string.h>
@@ -34,6 +35,8 @@ static const char *TAG = "bluetooth";
                                             quick reconnect fail spuriously (HCI 0x04). */
 #define BT_NVS_NS        "bt"            /* NVS namespace for this service */
 #define BT_NVS_KEY_KNOWN "known"        /* blob: the s_known array (count = blob size / entry) */
+#define BT_AUTO_OFF_DELAY_MS 1000        /* link drop -> radio off: lets the stack finish the
+                                            teardown and player_poll (100 ms) unwind the BT sink */
 
 static bool               s_inited;
 static bool               s_known_loaded;     /* NVS known-list + mutex are ready (radio may be off) */
@@ -60,6 +63,9 @@ static bool               s_avrc_connected; /* AVRCP control channel up (separat
 static uint8_t            s_avrc_vol;       /* last requested absolute volume, 0..0x7F */
 static bool              s_avrc_have_vol;   /* a volume was requested at least once */
 static volatile bool     s_vol_acked;       /* the most recent set was confirmed by the sink */
+static volatile bool     s_auto_off = true; /* power the radio down when the link drops (the BT
+                                               settings screen clears it while it owns the radio) */
+static volatile bool     s_off_task_live;   /* an auto_off_task is in flight (spawn at most one) */
 
 /* Rolling AVRCP transaction label (0..15); consecutive commands should use different values. */
 static uint8_t next_tl(void)
@@ -266,6 +272,23 @@ static void conn_timeout_cb(TimerHandle_t t)
     esp_a2d_source_disconnect(s_peer_bda);
 }
 
+/* Deferred radio power-down after a link drop, so the radio never idles powered with nothing to
+   serve. One-shot task: bluetooth_shutdown() cannot run in the Bluedroid callback that reports the
+   disconnect (the stack cannot deinit from its own task). The delay lets the stack finish tearing
+   the link down and player_poll unwind the BT sink; the flag re-check skips the shutdown if the
+   user re-engaged the radio meanwhile (entered the BT screen), and bluetooth_shutdown() itself
+   refuses if a link re-formed. */
+static void auto_off_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(BT_AUTO_OFF_DELAY_MS));
+    if (s_auto_off && bluetooth_shutdown() == ESP_OK) {
+        ESP_LOGI(TAG, "link dropped, radio auto powered down");
+    }
+    s_off_task_live = false;
+    vTaskDelete(NULL);
+}
+
 static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
 {
     switch (event) {
@@ -295,6 +318,12 @@ static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
                             s_conn_state == BLUETOOTH_CONN_CONNECTED)
                                ? BLUETOOTH_CONN_IDLE : BLUETOOTH_CONN_FAILED;
             ESP_LOGW(TAG, "A2DP disconnected (reason %d)", param->conn_stat.disc_rsn);
+            /* Nothing left to serve: power the radio down (deferred; see auto_off_task) unless
+               the BT screen holds it up. Also covers a connect that fails after screen exit. */
+            if (s_auto_off && !s_off_task_live) {
+                s_off_task_live =
+                    xTaskCreate(auto_off_task, "bt_off", 4096, NULL, 1, NULL) == pdPASS;
+            }
             break;
         default:  /* DISCONNECTING: keep current state until DISCONNECTED arrives. */
             ESP_LOGI(TAG, "A2DP connection state %d", param->conn_stat.state);
@@ -498,6 +527,11 @@ esp_err_t bluetooth_shutdown(void)
     s_inited         = false;
     ESP_LOGI(TAG, "radio powered down");
     return err;
+}
+
+void bluetooth_set_auto_shutdown(bool enable)
+{
+    s_auto_off = enable;
 }
 
 esp_err_t bluetooth_scan_start(void)
