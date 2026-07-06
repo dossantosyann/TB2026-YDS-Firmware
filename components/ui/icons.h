@@ -100,3 +100,13 @@ extern const uint8_t icon_stats_peripherals[];
 #define ICON_STATS_SYSTEM_W 16
 #define ICON_STATS_SYSTEM_H 16
 extern const uint8_t icon_stats_system[];
+
+/* bluetooth.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_BLUETOOTH_W 16
+#define ICON_BLUETOOTH_H 16
+extern const uint8_t icon_bluetooth[];
+
+/* headphones.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_HEADPHONES_W 16
+#define ICON_HEADPHONES_H 16
+extern const uint8_t icon_headphones[];
