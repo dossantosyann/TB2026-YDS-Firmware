@@ -37,8 +37,8 @@ static void menu_input(screen_t *self, ui_event_t ev)
 {
     (void)self;
     switch (ev) {
-    case UI_EVENT_UP:   if (s_sel > 0)            s_sel--; break;
-    case UI_EVENT_DOWN: if (s_sel < N_ITEMS - 1)  s_sel++; break;
+    case UI_EVENT_UP:   s_sel = (s_sel - 1 + N_ITEMS) % N_ITEMS; break;
+    case UI_EVENT_DOWN: s_sel = (s_sel + 1) % N_ITEMS;          break;
     case UI_EVENT_SELECT: navigator_push(s_targets[s_sel]); break;
     case UI_EVENT_BACK:   navigator_pop();                  break;
     default: break;

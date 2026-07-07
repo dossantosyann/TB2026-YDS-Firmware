@@ -407,10 +407,10 @@ static void handle_input(screen_t *self, ui_event_t ev)
     case FB_BROWSE:
         switch (ev) {
         case UI_EVENT_UP:
-            if (s_sel > 0) { s_sel--; adjust_scroll(); }
+            if (s_count > 0) { s_sel = (s_sel - 1 + s_count) % s_count; adjust_scroll(); }
             break;
         case UI_EVENT_DOWN:
-            if (s_sel < s_count - 1) { s_sel++; adjust_scroll(); }
+            if (s_count > 0) { s_sel = (s_sel + 1) % s_count; adjust_scroll(); }
             break;
         case UI_EVENT_SELECT:
             if (s_count == 0) break;

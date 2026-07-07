@@ -8,10 +8,10 @@ static void on_exit(screen_t *self)  { (void)self; }
 static void handle_input(screen_t *self, ui_event_t event)
 {
     menu_screen_t *ms = (menu_screen_t *)self;
-    if (event == UI_EVENT_UP && ms->selected > 0)
-        ms->selected--;
-    else if (event == UI_EVENT_DOWN && ms->selected < ms->item_count - 1)
-        ms->selected++;
+    if (event == UI_EVENT_UP && ms->item_count > 0)
+        ms->selected = (ms->selected - 1 + ms->item_count) % ms->item_count;
+    else if (event == UI_EVENT_DOWN && ms->item_count > 0)
+        ms->selected = (ms->selected + 1) % ms->item_count;
     else if (event == UI_EVENT_SELECT) {
         const menu_item_t *item = &ms->items[ms->selected];
         if (item->navigate_to) navigator_push(item->navigate_to);

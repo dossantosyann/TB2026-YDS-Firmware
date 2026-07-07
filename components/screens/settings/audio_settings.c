@@ -153,8 +153,8 @@ static void handle_input(screen_t *self, ui_event_t ev)
 {
     (void)self;
     switch (ev) {
-    case UI_EVENT_UP:   if (s_sel > 0)         s_sel--; break;
-    case UI_EVENT_DOWN: if (s_sel < N_SEL - 1) s_sel++; break;
+    case UI_EVENT_UP:   s_sel = (s_sel - 1 + N_SEL) % N_SEL; break;
+    case UI_EVENT_DOWN: s_sel = (s_sel + 1) % N_SEL;        break;
     case UI_EVENT_LEFT:
         if (s_sel == SEL_SLIDER && s_steps < BAL_MAX) {
             s_steps++;                          /* toward L: boost left, attenuate right */

@@ -49,8 +49,8 @@ static void handle_input(screen_t *self, ui_event_t ev)
 {
     duration_picker_t *dp = (duration_picker_t *)self;
     switch (ev) {
-    case UI_EVENT_UP:   if (dp->sel > 0)              dp->sel--; break;
-    case UI_EVENT_DOWN: if (dp->sel < dp->count - 1)  dp->sel++; break;
+    case UI_EVENT_UP:   dp->sel = (dp->sel - 1 + dp->count) % dp->count; break;
+    case UI_EVENT_DOWN: dp->sel = (dp->sel + 1) % dp->count;            break;
     case UI_EVENT_BACK:
         if (dp->presets[dp->sel] != dp->get())   /* persist once, only if it moved */
             dp->set(dp->presets[dp->sel]);

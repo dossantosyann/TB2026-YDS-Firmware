@@ -75,8 +75,8 @@ static void handle_input(screen_t *self, ui_event_t ev)
 {
     (void)self;
     switch (ev) {
-    case UI_EVENT_UP:   if (s_selected > 0)          s_selected--; break;
-    case UI_EVENT_DOWN: if (s_selected < N_ROWS - 1) s_selected++; break;
+    case UI_EVENT_UP:   s_selected = (s_selected - 1 + N_ROWS) % N_ROWS; break;
+    case UI_EVENT_DOWN: s_selected = (s_selected + 1) % N_ROWS;         break;
     case UI_EVENT_SELECT:
         if (s_targets[s_selected]) navigator_push(s_targets[s_selected]);
         break;
