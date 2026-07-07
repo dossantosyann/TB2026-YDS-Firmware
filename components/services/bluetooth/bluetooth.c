@@ -649,6 +649,11 @@ bool bluetooth_is_scanning(void)
     return s_scanning;
 }
 
+bool bluetooth_is_powered(void)
+{
+    return s_inited;
+}
+
 size_t bluetooth_get_devices(bluetooth_device_t *out, size_t cap)
 {
     if (!out || cap == 0 || !s_lock) return 0;

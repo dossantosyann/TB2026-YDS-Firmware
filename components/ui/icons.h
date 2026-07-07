@@ -110,3 +110,28 @@ extern const uint8_t icon_bluetooth[];
 #define ICON_HEADPHONES_W 16
 #define ICON_HEADPHONES_H 16
 extern const uint8_t icon_headphones[];
+
+/* power.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_POWER_W 16
+#define ICON_POWER_H 16
+extern const uint8_t icon_settings_power[];
+
+/* screen.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_SCREEN_W 16
+#define ICON_SCREEN_H 16
+extern const uint8_t icon_settings_screen[];
+
+/* settings_audio.png: 16x16, 1 bpp, MSB-first. */
+#define ICON_SETTINGS_AUDIO_W 16
+#define ICON_SETTINGS_AUDIO_H 16
+extern const uint8_t icon_settings_audio[];
+
+/* antenna (mast only): 16x16, 1 bpp, MSB-first. */
+#define ICON_ANTENNA_W 16
+#define ICON_ANTENNA_H 16
+extern const uint8_t icon_antenna[];
+
+/* antenna with waves: 16x16, 1 bpp, MSB-first. */
+#define ICON_ANTENNA_ON_W 16
+#define ICON_ANTENNA_ON_H 16
+extern const uint8_t icon_antenna_on[];

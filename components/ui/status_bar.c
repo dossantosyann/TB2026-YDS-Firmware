@@ -5,6 +5,7 @@
 #include "icons.h"
 #include "power.h"
 #include "volume.h"
+#include "bluetooth.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -23,23 +24,38 @@ void status_bar_draw(void)
 {
     gfx_fill_rect(0, 0, GFX_W, STATUS_BAR_H, GFX_BLACK);   /* reserve a clean strip */
 
-    /* Left of the bar: the active audio output. Colour is the free cue on this RGB565
-       panel (no extra lit pixels): white headphones for the jack, Bluetooth-blue rune
-       when routed to a speaker (only selectable once connected), dimmed when muted. */
+    /* Far left: Bluetooth radio activity. Colour + waves are the free cue on this RGB565
+       panel: a dim antenna when the radio is off, a white antenna when it is on but not
+       linked, and a white antenna with radiating waves once an A2DP link is up. No live
+       RSSI of the active link is exposed, so "signal" is shown coarsely (present/absent),
+       not as a measured strength -- and the bar is event-driven, so it refreshes on the
+       next input, not on its own. */
+    if (!bluetooth_is_powered()) {
+        gfx_blit_1bpp(MARGIN, 0, ICON_ANTENNA_W, ICON_ANTENNA_H,
+                      icon_antenna, gfx_rgb(96, 96, 96));
+    } else if (bluetooth_get_conn_state() == BLUETOOTH_CONN_CONNECTED) {
+        gfx_blit_1bpp(MARGIN, 0, ICON_ANTENNA_ON_W, ICON_ANTENNA_ON_H,
+                      icon_antenna_on, GFX_WHITE);
+    } else {
+        gfx_blit_1bpp(MARGIN, 0, ICON_ANTENNA_W, ICON_ANTENNA_H,
+                      icon_antenna, GFX_WHITE);
+    }
+
+    /* Centre: the active audio output. White "JACK" for the wired path, Bluetooth-blue
+       "BT" for the speaker; dimmed when muted (VOLUME_OUT_NONE, the wired path silenced). */
+    const char *out_txt;
+    gfx_color_t out_col;
     switch (volume_get_output()) {
     case VOLUME_OUT_BT:
-        gfx_blit_1bpp(MARGIN, 0, ICON_BLUETOOTH_W, ICON_BLUETOOTH_H,
-                      icon_bluetooth, gfx_rgb(0, 130, 252));
-        break;
+        out_txt = "BT";   out_col = gfx_rgb(0, 130, 252); break;
     case VOLUME_OUT_DAC:
-        gfx_blit_1bpp(MARGIN, 0, ICON_HEADPHONES_W, ICON_HEADPHONES_H,
-                      icon_headphones, GFX_WHITE);
-        break;
-    case VOLUME_OUT_NONE:
-        gfx_blit_1bpp(MARGIN, 0, ICON_HEADPHONES_W, ICON_HEADPHONES_H,
-                      icon_headphones, gfx_rgb(96, 96, 96));
-        break;
+        out_txt = "JACK"; out_col = GFX_WHITE;            break;
+    default: /* VOLUME_OUT_NONE */
+        out_txt = "JACK"; out_col = gfx_rgb(96, 96, 96);  break;
     }
+    int ow = (int)strlen(out_txt) * GFX_CHAR_W;
+    int oy = (STATUS_BAR_H - GFX_CHAR_H) / 2;
+    gfx_draw_text((GFX_W - ow) / 2, oy, out_txt, out_col, 1);
 
     power_state_t st;
     power_get_state(&st);

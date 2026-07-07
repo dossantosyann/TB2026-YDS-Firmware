@@ -125,6 +125,17 @@ esp_err_t bluetooth_scan_stop(void);
 bool bluetooth_is_scanning(void);
 
 /**
+ * @brief Report whether the radio (controller + Bluedroid) is currently powered up.
+ *
+ * True between bluetooth_init() and bluetooth_shutdown(). Lets the UI show radio activity
+ * (e.g. the status-bar antenna) and distinguish "radio off" from "on but not connected",
+ * which bluetooth_get_conn_state() alone cannot (IDLE covers both).
+ *
+ * @return true if the radio is up, false if powered down.
+ */
+bool bluetooth_is_powered(void);
+
+/**
  * @brief Copy the current scan results into @p out (thread-safe snapshot).
  *
  * Copies up to @p cap entries from the internal list under a lock, so it is safe to call from
