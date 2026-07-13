@@ -97,7 +97,7 @@ void power_set_usb_route(power_usb_route_t route);
  * Routes the USB-C data lines to the MAX77757 (POWER_USB_CHARGE) so the charger can
  * run its source-current detection, then spawns a short-lived task that hands the
  * lines to the CP2102N (POWER_USB_DATA) as soon as INOKB asserts (input detected),
- * or after a 10 s safety timeout if it never does. The task self-deletes when done.
+ * or after a 5 s safety timeout if it never does. The task self-deletes when done.
  * Call once, early in boot. Requires gpio_expander_init() to have run (reads INOKB).
  */
 void power_usb_autoroute_start(void);

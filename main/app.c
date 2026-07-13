@@ -81,6 +81,11 @@ void app_init(void)
     ESP_ERROR_CHECK(i2c_bus_init(&s_i2c));
     ESP_ERROR_CHECK(gpio_expander_init(s_i2c));
 
+    /* USB-C mux hand-off (TC7USB40MU): the charger gets the data lines first for its
+       source detection, then a short-lived task hands them to the console once INOKB
+       asserts. Must follow gpio_expander_init() -- the task reads INOKB off it. */
+    power_usb_autoroute_start();
+
     /* Battery: the MAX17260 fuel gauge on the shared I2C bus, then the maintenance
        task that polls it through power_tick() every 2 s. The gauge and the expander
        (INOKB) must both be up first -- power_tick() reads both. This is what fills

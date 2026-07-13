@@ -22,7 +22,7 @@ static const char *TAG = "power";
 #define CHARGE_CURRENT_MA  10.0f   /* current into the cell above this = charging */
 
 /* USB mux hand-off: charger detects the source, then the console takes the lines. */
-#define USB_AUTOROUTE_TIMEOUT_MS  10000
+#define USB_AUTOROUTE_TIMEOUT_MS   5000
 #define USB_AUTOROUTE_POLL_MS       100
 
 static power_state_t          s_state;          /* zero-init: valid=false until the first good read */
