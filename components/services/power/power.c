@@ -21,12 +21,24 @@ static const char *TAG = "power";
 #define CRITICAL_SOC_PCT    5.0f
 #define CHARGE_CURRENT_MA  10.0f   /* current into the cell above this = charging */
 
-/* USB mux hand-off: charger detects the source, then the console takes the lines. */
-#define USB_AUTOROUTE_TIMEOUT_MS   5000
+/* USB mux hand-off: charger detects the source, then the console takes the lines. This is the
+   MAX77757 reference topology (datasheet "D+/D- Multiplexing"): the charger owns D+/D- long
+   enough to run BC1.2, signals a valid input on INOKB, and only then does the console get them.
+   The hold covers the worst-case detection: 900 ms DCD timeout + 39 ms primary-to-secondary +
+   55 ms debounce. Handing the lines back sooner aborts BC1.2, and the input current limit stays
+   at its 500 mA default instead of the 1.5 A a DCP/CDP can give. */
+#define USB_AUTOROUTE_TIMEOUT_MS   5000   /* give up waiting for INOKB (no valid source) */
+#define USB_CHARGER_HOLD_MS        1200
 #define USB_AUTOROUTE_POLL_MS       100
 
 static power_state_t          s_state;          /* zero-init: valid=false until the first good read */
 static power_shutdown_hook_t  s_shutdown_hook;  /* NULL until registered */
+
+/* Autoroute re-arming. s_usb_routing keeps a second task from racing one already in flight.
+   s_ext_prev starts true so a cable already in at boot does not re-trigger the hand-off that
+   app_init() just ran; only a plug event (no external power -> external power) re-arms it. */
+static volatile bool s_usb_routing;
+static bool          s_ext_prev = true;
 
 /* Power-saving timeouts (user preferences, persisted in NVS via the settings service).
    Both are cached lazily on first read so the hot paths that consult them every loop
@@ -55,17 +67,22 @@ void power_tick(void)
         return;
     }
 
-    /* INOKB on expander IO7. Active-low (verified on hardware: bit7 low at rest with
-       USB connected), so low = input power present. */
-    bool inokb = true;   /* default to "no external power" if the read fails */
-    gpio_expander_get(EXP_INOKB, &inokb);
+    /* INOKB on expander IO7: MAX77757 open-drain flag, low = valid input at CHGIN. A failed I2C
+       read tells us nothing, so keep the previous verdict rather than reporting "unplugged" --
+       a phantom unplug/replug pair would re-arm the autoroute and drop the console for nothing. */
+    bool inokb;
+    if (gpio_expander_get(EXP_INOKB, &inokb) == ESP_OK) s_state.external_power = !inokb;
 
     s_state.valid          = true;
     s_state.soc_pct        = d.soc_pct;
     s_state.voltage_v      = d.voltage_v;
     s_state.current_ma     = d.current_ma;
     s_state.charging       = d.current_ma > CHARGE_CURRENT_MA;
-    s_state.external_power  = !inokb;
+
+    /* Plug event: give the charger the data lines back so it can redo BC1.2 on this source.
+       Without it a hot-plugged legacy (USB-A) charger stays capped at the 500 mA default. */
+    if (s_state.external_power && !s_ext_prev) power_usb_autoroute_start();
+    s_ext_prev = s_state.external_power;
 
     if (d.soc_pct <= CRITICAL_SOC_PCT)   s_state.level = POWER_LEVEL_CRITICAL;
     else if (d.soc_pct <= LOW_SOC_PCT)   s_state.level = POWER_LEVEL_LOW;
@@ -94,23 +111,34 @@ void power_set_usb_route(power_usb_route_t route)
 static void usb_autoroute_task(void *arg)
 {
     (void)arg;
-    /* Wait for INOKB to assert (low = input detected) or the safety timeout, then hand
-       the data lines to the console. Poll the expander; the charger does its detection
-       on the lines we routed to it in power_usb_autoroute_start(). */
+    /* Wait for INOKB to assert (valid input) then keep the lines on the charger until the hold
+       elapses, so BC1.2 runs to completion. If INOKB never asserts there is no source worth
+       waiting for: bail out at the timeout and give the console its lines back either way. */
+    bool valid = false;
     for (uint32_t elapsed = 0; elapsed < USB_AUTOROUTE_TIMEOUT_MS; elapsed += USB_AUTOROUTE_POLL_MS) {
-        bool inokb = true;
-        if (gpio_expander_get(EXP_INOKB, &inokb) == ESP_OK && !inokb) break;
+        bool inokb;
+        if (!valid && gpio_expander_get(EXP_INOKB, &inokb) == ESP_OK && !inokb) valid = true;
+        if (valid && elapsed >= USB_CHARGER_HOLD_MS) break;
         vTaskDelay(pdMS_TO_TICKS(USB_AUTOROUTE_POLL_MS));
     }
     power_set_usb_route(POWER_USB_DATA);
-    ESP_LOGI(TAG, "USB lines routed to console (CP2102N)");
+    ESP_LOGI(TAG, "USB lines routed to console (CP2102N), source %s",
+             valid ? "detected" : "absent");
+    s_usb_routing = false;
     vTaskDelete(NULL);
 }
 
 void power_usb_autoroute_start(void)
 {
+    if (s_usb_routing) return;   /* one hand-off at a time: a replug during it changes nothing */
+    s_usb_routing = true;
+
     power_set_usb_route(POWER_USB_CHARGE);   /* charger first: let it detect the source */
-    xTaskCreate(usb_autoroute_task, "usbroute", 3072, NULL, 4, NULL);
+    if (xTaskCreate(usb_autoroute_task, "usbroute", 3072, NULL, 4, NULL) != pdPASS) {
+        ESP_LOGW(TAG, "usbroute task failed; leaving the USB lines on the console");
+        power_set_usb_route(POWER_USB_DATA);   /* never strand the lines on the charger */
+        s_usb_routing = false;
+    }
 }
 
 void power_set_shutdown_hook(power_shutdown_hook_t hook)

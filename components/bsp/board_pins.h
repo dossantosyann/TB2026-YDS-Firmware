@@ -69,5 +69,5 @@
 #define EXP_BTN_LEFT     (4)   ///< IO4: button Left
 #define EXP_BTN_DOWN     (5)   ///< IO5: button Down
 #define EXP_BTN_UP       (6)   ///< IO6: button Up
-#define EXP_INOKB        (7)   ///< IO7: MAX17260 fuel-gauge INOKB (input)
+#define EXP_INOKB        (7)   ///< IO7: MAX77757 charger INOKB, open-drain, low = valid input at CHGIN
 ///@}

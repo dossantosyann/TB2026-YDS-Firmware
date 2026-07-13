@@ -11,9 +11,10 @@
  *     and not being fed.
  *   - USB-C data/charge mux routing (TC7USB40MU via PIN_USB_DIR).
  *
- * This service does not own a task. The maintenance task calls power_tick()
- * periodically (see services/maintenance). The fuel gauge and GPIO expander
- * drivers must already be initialised before power_tick() runs.
+ * This service owns no long-lived task: the maintenance task calls power_tick() periodically
+ * (see services/maintenance), and the only task it ever spawns is the short-lived USB mux
+ * hand-off, which self-deletes. The fuel gauge and GPIO expander drivers must already be
+ * initialised before power_tick() runs.
  */
 #pragma once
 
@@ -92,13 +93,18 @@ void power_get_state(power_state_t *out);
 void power_set_usb_route(power_usb_route_t route);
 
 /**
- * @brief Boot-time USB mux hand-off: charger first, then console.
+ * @brief USB mux hand-off: charger first, then console.
  *
- * Routes the USB-C data lines to the MAX77757 (POWER_USB_CHARGE) so the charger can
- * run its source-current detection, then spawns a short-lived task that hands the
- * lines to the CP2102N (POWER_USB_DATA) as soon as INOKB asserts (input detected),
- * or after a 5 s safety timeout if it never does. The task self-deletes when done.
- * Call once, early in boot. Requires gpio_expander_init() to have run (reads INOKB).
+ * Routes the USB-C data lines to the MAX77757 (POWER_USB_CHARGE) so the charger can run its
+ * BC1.2 source detection, then spawns a short-lived task that hands the lines to the CP2102N
+ * (POWER_USB_DATA) once INOKB asserts (valid input) and the detection has had time to finish,
+ * or after a safety timeout if no source ever shows up. The task self-deletes when done.
+ *
+ * Call once early in boot; power_tick() then re-arms it on every plug event, since BC1.2 needs
+ * the data lines and would otherwise leave a legacy charger capped at its 500 mA default. Calls
+ * made while a hand-off is already running are ignored. Requires gpio_expander_init() (INOKB).
+ *
+ * The console loses its USB device for the duration of each hand-off.
  */
 void power_usb_autoroute_start(void);
 
