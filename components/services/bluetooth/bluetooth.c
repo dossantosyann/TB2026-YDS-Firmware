@@ -13,6 +13,7 @@
 #include "esp_pm.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+#include "diag.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -289,6 +290,7 @@ static void conn_reset_task(void *arg)
                  esp_err_to_name(err));
     }
     s_reset_task_live = false;
+    diag_task_exit();
     vTaskDelete(NULL);
 }
 
@@ -322,6 +324,7 @@ static void auto_off_task(void *arg)
         ESP_LOGI(TAG, "link dropped, radio auto powered down");
     }
     s_off_task_live = false;
+    diag_task_exit();
     vTaskDelete(NULL);
 }
 

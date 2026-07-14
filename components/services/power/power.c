@@ -9,6 +9,7 @@
 #include "gpio_expander.h"
 #include "settings.h"
 #include "driver/gpio.h"
+#include "diag.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -39,6 +40,10 @@ static power_shutdown_hook_t  s_shutdown_hook;  /* NULL until registered */
    app_init() just ran; only a plug event (no external power -> external power) re-arms it. */
 static volatile bool s_usb_routing;
 static bool          s_ext_prev = true;
+
+/* Last route driven onto PIN_USB_DIR, for the diagnostics page. Reads POWER_USB_DATA before the
+   first power_set_usb_route() call, when the pin is not driven yet -- boot calls it right away. */
+static power_usb_route_t s_usb_route;
 
 /* Power-saving timeouts (user preferences, persisted in NVS via the settings service).
    Both are cached lazily on first read so the hot paths that consult them every loop
@@ -106,25 +111,35 @@ void power_set_usb_route(power_usb_route_t route)
     /* PIN_USB_DIR drives the TC7USB40MU select: HIGH = MAX77757 charger, LOW = CP2102N. */
     gpio_set_level(PIN_USB_DIR, route == POWER_USB_CHARGE ? 1 : 0);
     gpio_set_direction(PIN_USB_DIR, GPIO_MODE_OUTPUT);
+    s_usb_route = route;
+}
+
+power_usb_route_t power_get_usb_route(void)
+{
+    return s_usb_route;
 }
 
 static void usb_autoroute_task(void *arg)
 {
     (void)arg;
-    /* Wait for INOKB to assert (valid input) then keep the lines on the charger until the hold
-       elapses, so BC1.2 runs to completion. If INOKB never asserts there is no source worth
-       waiting for: bail out at the timeout and give the console its lines back either way. */
+    /* Wait for INOKB to assert (valid input), then keep the lines on the charger for the hold so
+       BC1.2 runs to completion. The hold is counted from the assertion, not from the start of the
+       hand-off: a cable plugged in late in the wait window still gets its full detection time.
+       If INOKB never asserts there is no source worth waiting for -- bail out at the timeout. The
+       console gets its lines back on every path. */
     bool valid = false;
-    for (uint32_t elapsed = 0; elapsed < USB_AUTOROUTE_TIMEOUT_MS; elapsed += USB_AUTOROUTE_POLL_MS) {
+    for (uint32_t waited = 0; waited < USB_AUTOROUTE_TIMEOUT_MS; waited += USB_AUTOROUTE_POLL_MS) {
         bool inokb;
-        if (!valid && gpio_expander_get(EXP_INOKB, &inokb) == ESP_OK && !inokb) valid = true;
-        if (valid && elapsed >= USB_CHARGER_HOLD_MS) break;
+        if (gpio_expander_get(EXP_INOKB, &inokb) == ESP_OK && !inokb) { valid = true; break; }
         vTaskDelay(pdMS_TO_TICKS(USB_AUTOROUTE_POLL_MS));
     }
+    if (valid) vTaskDelay(pdMS_TO_TICKS(USB_CHARGER_HOLD_MS));
+
     power_set_usb_route(POWER_USB_DATA);
     ESP_LOGI(TAG, "USB lines routed to console (CP2102N), source %s",
              valid ? "detected" : "absent");
     s_usb_routing = false;
+    diag_task_exit();
     vTaskDelete(NULL);
 }
 

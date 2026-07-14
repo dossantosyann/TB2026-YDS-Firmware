@@ -26,6 +26,7 @@
 #include "esp_log.h"
 #include "esp_pm.h"
 #include "esp_task_wdt.h"
+#include "diag.h"
 #include <string.h>
 
 /* Shared I2C master bus, owned here and handed to every device on it (expander now;
@@ -54,6 +55,7 @@ static void storage_scan_task(void *arg)
             }
         }
     }
+    diag_task_exit();
     vTaskDelete(NULL);
 }
 
@@ -168,6 +170,7 @@ static void draw_lock_screen(unsigned phase)
 static void ui_task(void *arg)
 {
     (void)arg;
+    diag_register_task(UI_TASK_STACK);
 
     /* Bring up the panel (it owns its SPI device) and the button path from this task,
        so their interrupts are allocated on core 1 too, then hand the screen over to

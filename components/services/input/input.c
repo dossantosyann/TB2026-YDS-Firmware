@@ -8,6 +8,7 @@
 #include "gpio_expander.h"
 #include "driver/gpio.h"
 #include "esp_timer.h"
+#include "diag.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -38,6 +39,7 @@ static void IRAM_ATTR input_isr(void *arg)
 static void input_task(void *arg)
 {
     (void)arg;
+    diag_register_task(INPUT_TASK_STACK);
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);    /* idle here: no polling, no I2C at rest */
 

@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "diag.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include <math.h>
@@ -216,6 +217,7 @@ static void run_file(const char *path)
 static void audio_task(void *arg)
 {
     (void)arg;
+    diag_register_task(PIPE_TASK_STACK);
     pipe_cmd_t c;
     for (;;) {
         /* Idle: block until something asks to play. STOP/PAUSE/RESUME received here are no-ops. */

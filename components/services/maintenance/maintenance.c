@@ -12,6 +12,7 @@
 #include "sdcard.h"
 #include "input.h"
 #include "settings.h"
+#include "diag.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -40,6 +41,7 @@ static void sd_scan_task(void *arg)
     if (storage_init() == ESP_OK) {
         playlist_sync();
     }
+    diag_task_exit();
     vTaskDelete(NULL);
 }
 
@@ -111,6 +113,7 @@ static void power_off_watch(void)
 static void maintenance_task(void *arg)
 {
     (void)arg;
+    diag_register_task(MAINT_TASK_STACK);
     const TickType_t period = pdMS_TO_TICKS(MAINT_VOL_MS);
     int pwr = 0, sd = 0;
     for (;;) {
@@ -118,6 +121,7 @@ static void maintenance_task(void *arg)
         player_poll();
         if (++pwr >= MAINT_PWR_DIV) { power_tick(); power_off_watch(); pwr = 0; }
         if (++sd >= MAINT_SD_DIV) { sd_watch(); sd = 0; }
+        diag_tick(MAINT_VOL_MS);   /* dumps the report every DIAG_DUMP_MS; no-op when off */
         vTaskDelay(period);
     }
 }

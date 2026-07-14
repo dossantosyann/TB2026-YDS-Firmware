@@ -93,6 +93,14 @@ void power_get_state(power_state_t *out);
 void power_set_usb_route(power_usb_route_t route);
 
 /**
+ * @brief The route currently driven onto PIN_USB_DIR (for diagnostics).
+ *
+ * Reports POWER_USB_DATA before the first power_set_usb_route() call, when the pin is not
+ * driven yet — boot calls it immediately, so only the very first instants of bring-up lie.
+ */
+power_usb_route_t power_get_usb_route(void);
+
+/**
  * @brief USB mux hand-off: charger first, then console.
  *
  * Routes the USB-C data lines to the MAX77757 (POWER_USB_CHARGE) so the charger can run its

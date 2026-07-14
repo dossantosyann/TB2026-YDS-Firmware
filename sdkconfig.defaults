@@ -25,3 +25,9 @@ CONFIG_ESP_TASK_WDT_PANIC=y
 # APB/CPU locks while active, so audio is unaffected. No tickless/light sleep: it
 # would stop I2S, and the BT low-power clock needs a 32 kHz crystal we don't have.
 CONFIG_PM_ENABLE=y
+
+# Diagnostics campaign (components/services/diag, off): re-enable DIAG_ENABLED in diag.h
+# together with CONFIG_FREERTOS_USE_TRACE_FACILITY, _USE_STATS_FORMATTING_FUNCTIONS,
+# _GENERATE_RUN_TIME_STATS and _VTASKLIST_INCLUDE_COREID. They stay out of the shipping
+# build: the trace facility widens every TCB and the run-time stats read a counter on
+# every context switch. (Stack-overflow checking stays at its IDF default, Canary.)

@@ -13,6 +13,8 @@
 #include "icons.h"
 
 #include "power.h"
+#include "board_pins.h"
+#include "gpio_expander.h"
 #include "fuel_gauge.h"
 #include "storage.h"
 #include "sdcard.h"
@@ -119,6 +121,20 @@ static void render_battery(screen_t *self)
     power_state_t p;
     power_get_state(&p);
     emitf(GFX_WHITE, "Charging:    %s", p.charging ? "yes" : "no");
+
+    s_y += GROUP_GAP;
+
+    /* USB hand-off, read live (the cached snapshot only refreshes every 2 s, too coarse to catch
+       the mux swing). INOKB is the charger's open-drain valid-input flag, low = source at CHGIN;
+       the mux line names the chip the TC7USB40MU currently gives D+/D- to. On a plug this page
+       shows MAX77757 for the detection window, then CP2102N — that is the hand-off working. */
+    bool inokb;
+    if (gpio_expander_get(EXP_INOKB, &inokb) == ESP_OK)
+        emitf(GFX_WHITE, "INOKB:       %s", inokb ? "high (none)" : "low (source)");
+    else
+        emit("INOKB:       read error", gfx_rgb(255, 80, 80));
+    emitf(GFX_WHITE, "USB mux:     %s",
+          power_get_usb_route() == POWER_USB_CHARGE ? "MAX77757" : "CP2102N");
 }
 
 static void render_storage(screen_t *self)
