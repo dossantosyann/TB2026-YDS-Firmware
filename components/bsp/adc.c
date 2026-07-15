@@ -93,3 +93,22 @@ uint8_t adc_pot_to_avrcp_volume(int mv)
     // Linear: louder = higher value. vol=0 -> 0 (silent), vol=1 -> 0x7F (loudest).
     return (uint8_t)lroundf(vol * 0x7F);
 }
+
+/* Feed a fraction through the knob's mv range so the fixed level uses the exact same curve
+   (dB shaping, floor, POT_INVERTED) as the pot — the single source of truth for the mapping. */
+static int frac_to_mv(float frac)
+{
+    if (frac < 0.0f) frac = 0.0f;
+    if (frac > 1.0f) frac = 1.0f;
+    return POT_MV_MIN + (int)lroundf(frac * (POT_MV_MAX - POT_MV_MIN));
+}
+
+uint8_t adc_frac_to_volume(float frac)
+{
+    return adc_pot_to_volume(frac_to_mv(frac));
+}
+
+uint8_t adc_frac_to_avrcp_volume(float frac)
+{
+    return adc_pot_to_avrcp_volume(frac_to_mv(frac));
+}

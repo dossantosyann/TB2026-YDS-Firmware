@@ -83,6 +83,7 @@ void power_tick(void)
     s_state.soc_pct        = d.soc_pct;
     s_state.voltage_v      = d.voltage_v;
     s_state.current_ma     = d.current_ma;
+    s_state.tte_s          = d.tte_s;
     s_state.charging       = d.current_ma > CHARGE_CURRENT_MA;
 
     /* Plug event: give the charger the data lines back so it can redo BC1.2 on this source.

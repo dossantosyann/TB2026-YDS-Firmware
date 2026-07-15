@@ -53,8 +53,14 @@ typedef struct {
 /**
  * @brief Start an autonomy run with the given workload.
  *
+ * IDLE stops playback (silence). JACK measures whatever is already playing on the jack: the caller
+ * must have a track playing on the DAC output first. The run pins that stream down for the duration
+ * — it forces loop-one (so it never ends early) and a fixed 50% volume (deterministic: the physical
+ * pot is bypassed) — and restores both when the run ends.
+ *
  * @param type  Workload to exercise.
- * @return ESP_OK; ESP_ERR_INVALID_STATE if a run is already in progress.
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if a run is already in progress, or (JACK) if nothing is
+ *         playing; ESP_ERR_NOT_SUPPORTED for BT (Phase D, not wired yet).
  */
 esp_err_t autonomy_start(autonomy_test_t type);
 

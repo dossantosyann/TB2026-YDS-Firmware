@@ -14,10 +14,13 @@
  * The last-run block is read-only telemetry (all "--" until a run has completed).
  */
 #include "battery_test.h"
+#include "storage_screen.h"
 #include "navigator.h"
 #include "status_bar.h"
 #include "gfx.h"
 #include "power.h"
+#include "player.h"
+#include "volume.h"
 #include "autonomy.h"
 
 #include <stdio.h>
@@ -30,33 +33,58 @@
 
 #define PAD_X    6
 #define TITLE_Y  (STATUS_BAR_H + 4)
-#define TYPE_Y   38
-#define READY_Y  54
-#define LAST_Y   74
-#define L1_Y     88
-#define L2_Y     100
+#define TYPE_Y   34
+#define PLAY_Y   48    /* Jack only: current-playback status line */
+#define READY_Y  62
+#define LAST_Y   78
+#define L1_Y     90
+#define L2_Y     101
 #define L3_Y     112
-#define L4_Y     124
+#define L4_Y     123
 #define START_Y  138
-#define REDUMP_Y 158
+#define REDUMP_Y 157
 #define BTN_H    15
+#define VAL_X    60    /* column where the Type value starts */
 
-#define READY_SOC_PCT 99.5f   /* a run is only meaningful starting from a full cell */
+#define READY_SOC_PCT 50.5f   /* a run is only meaningful starting from a full cell */
 
-/* Workload profiles; the run logic (not wired yet) will set the audio path per type. */
+/* Workload profiles; order matches autonomy_test_t. */
 static const char *const k_types[] = { "Idle", "Jack", "BT" };
 #define N_TYPES (int)(sizeof k_types / sizeof k_types[0])
 
-enum { ZONE_TYPE = 0, ZONE_START, ZONE_REDUMP, N_ZONES };
+enum { ZONE_TYPE = 0, ZONE_TRACK, ZONE_START, ZONE_REDUMP, N_ZONES };
 
-static int s_type;    /* index into k_types */
+static int s_type;    /* index into k_types (matches autonomy_test_t) */
 static int s_focus;   /* which zone owns LEFT/RIGHT and SELECT */
+
+/* JACK measures whatever is already playing on the jack, so it needs a live DAC stream. */
+static bool jack_playing(void)
+{
+    player_status_t st;
+    return player_get_state(&st) == ESP_OK && st.state == PLAYER_PLAYING &&
+           volume_get_output() == VOLUME_OUT_DAC;
+}
+
+/* The Track zone (opens the library to start/change the song) only applies to Jack. */
+static bool zone_active(int z) { return z != ZONE_TRACK || s_type == AUTONOMY_TEST_JACK; }
+
+static void focus_step(int dir)
+{
+    do { s_focus = (s_focus + dir + N_ZONES) % N_ZONES; } while (!zone_active(s_focus));
+}
 
 /* Glyph run width excluding the cell's trailing inter-char gap (same as power_settings). */
 static int text_w(const char *s, int scale)
 {
     int n = (int)strlen(s);
     return n ? n * GFX_CHAR_W * scale - scale : 0;
+}
+
+/* Right-truncate with "..." into dst (size must be max_chars+1 or more). */
+static void truncate_right(char *dst, size_t dst_sz, const char *src, int max_chars)
+{
+    if ((int)strlen(src) <= max_chars) snprintf(dst, dst_sz, "%s", src);
+    else                               snprintf(dst, dst_sz, "%.*s...", max_chars - 3, src);
 }
 
 static void draw_button(int y, const char *label, bool focused, bool enabled)
@@ -89,10 +117,26 @@ static void render(screen_t *self)
     /* Workload picker. */
     bool ft = (s_focus == ZONE_TYPE);
     gfx_draw_text(PAD_X, TYPE_Y, "Type:", ft ? ACCENT : DIM, 1);
-    int vx = 60;
-    if (ft) gfx_draw_text(vx - 12, TYPE_Y, "<", ACCENT, 1);
-    gfx_draw_text(vx, TYPE_Y, k_types[s_type], GFX_WHITE, 1);
-    if (ft) gfx_draw_text(vx + text_w(k_types[s_type], 1) + 6, TYPE_Y, ">", ACCENT, 1);
+    if (ft) gfx_draw_text(VAL_X - 12, TYPE_Y, "<", ACCENT, 1);
+    gfx_draw_text(VAL_X, TYPE_Y, k_types[s_type], GFX_WHITE, 1);
+    if (ft) gfx_draw_text(VAL_X + text_w(k_types[s_type], 1) + 6, TYPE_Y, ">", ACCENT, 1);
+
+    /* Jack: a focusable row that opens the existing library to start/change the track.
+       The run measures whatever is playing on the jack, so show it (or prompt to open it). */
+    bool play_ok = (s_type == AUTONOMY_TEST_JACK) && jack_playing();
+    if (s_type == AUTONOMY_TEST_JACK) {
+        bool fr = (s_focus == ZONE_TRACK);
+        gfx_draw_text(PAD_X, PLAY_Y, "Track:", fr ? ACCENT : DIM, 1);
+        if (play_ok) {
+            player_status_t st;
+            player_get_state(&st);
+            char pb[24];
+            truncate_right(pb, sizeof pb, st.track.name ? st.track.name : "", 18);
+            gfx_draw_text(VAL_X, PLAY_Y, pb, GFX_WHITE, 1);
+        } else {
+            gfx_draw_text(VAL_X, PLAY_Y, "open library", fr ? ACCENT : WARN, 1);
+        }
+    }
 
     /* Readiness: live SOC, gated at 100% and off external power. */
     power_state_t p;
@@ -143,7 +187,8 @@ static void render(screen_t *self)
     gfx_draw_text(PAD_X, L4_Y, "  SD dump", DIM, 1);
     gfx_draw_text(PAD_X + 10 * GFX_CHAR_W, L4_Y, sd_s, sd_c, 1);
 
-    draw_button(START_Y,  "START",      s_focus == ZONE_START,  ready);
+    bool can_start = ready && (s_type != AUTONOMY_TEST_JACK || play_ok);
+    draw_button(START_Y,  "START",      s_focus == ZONE_START,  can_start);
     draw_button(REDUMP_Y, "RE-DUMP SD", s_focus == ZONE_REDUMP, true);
 }
 
@@ -151,8 +196,8 @@ static void handle_input(screen_t *self, ui_event_t ev)
 {
     (void)self;
     switch (ev) {
-    case UI_EVENT_UP:   s_focus = (s_focus - 1 + N_ZONES) % N_ZONES; break;
-    case UI_EVENT_DOWN: s_focus = (s_focus + 1) % N_ZONES;           break;
+    case UI_EVENT_UP:   focus_step(-1); break;
+    case UI_EVENT_DOWN: focus_step(+1); break;
     case UI_EVENT_LEFT:
         if (s_focus == ZONE_TYPE) s_type = (s_type - 1 + N_TYPES) % N_TYPES;
         break;
@@ -160,10 +205,12 @@ static void handle_input(screen_t *self, ui_event_t ev)
         if (s_focus == ZONE_TYPE) s_type = (s_type + 1) % N_TYPES;
         break;
     case UI_EVENT_SELECT:
-        if (s_focus == ZONE_START) {
+        if (s_focus == ZONE_TRACK) {
+            navigator_push(storage_screen());   /* the existing library: play/change the track here */
+        } else if (s_focus == ZONE_START) {
             power_state_t p;
             power_get_state(&p);
-            if (run_ready(&p))
+            if (run_ready(&p) && (s_type != AUTONOMY_TEST_JACK || jack_playing()))
                 autonomy_start((autonomy_test_t)s_type);   /* k_types order matches autonomy_test_t */
         }
         /* TODO: ZONE_REDUMP re-exports the last CSV (Phase E). */

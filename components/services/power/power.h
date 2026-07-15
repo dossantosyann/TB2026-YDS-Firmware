@@ -53,6 +53,7 @@ typedef struct {
     float         current_ma;     ///< + into the cell (charge), - out (discharge), mA
     bool          charging;       ///< current into the cell above the charge threshold
     bool          external_power; ///< input present (INOKB asserted): USB/charger plugged in
+    float         tte_s;          ///< time to empty, s (only meaningful while discharging; 0 otherwise)
     power_level_t level;          ///< charge band derived from soc_pct
 } power_state_t;
 

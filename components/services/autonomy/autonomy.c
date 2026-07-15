@@ -7,12 +7,17 @@
 #include "power.h"
 #include "storage.h"
 #include "sdcard.h"
+#include "player.h"
+#include "playlist.h"
+#include "volume.h"
+#include "track_meta.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "nvs.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 static const char *TAG = "autonomy";
 
@@ -20,9 +25,22 @@ static const char *TAG = "autonomy";
 #define NVS_KEY_RUN  "run"
 #define NVS_KEY_SEQ  "seq"          /* monotonic run counter, for unique CSV file names */
 #define RUN_MAGIC    0xA5D50001u
-#define RUN_VERSION  1
+#define RUN_VERSION  2              /* v2 added the workload header (file/format/rate/volume) */
 #define MAX_SAMPLES  256            /* blob stays ~2.5 KB — the NVS partition is only 24 KB */
 #define SAMPLE_S_0   60             /* initial seconds between samples ("every minute") */
+
+/* Fixed, pot-independent volumes so a run is reproducible. Jack drives the analog amp, whose
+   draw scales with volume, so 50% is a representative mid load. Bluetooth amplifies in the
+   external (separately powered) speaker, so the AVRCP level does not affect this board's draw —
+   0% just keeps the speaker quiet without changing the measurement. */
+#define JACK_VOL_PCT 50
+#define BT_VOL_PCT   0
+
+/* run_t.format */
+#define FMT_NONE 0
+#define FMT_MP3  1
+#define FMT_WAV  2
+#define FILE_MAX 48                 /* stored track name, truncated (header only, once per run) */
 
 /* One point of the discharge curve. Elapsed time is stored per sample (not derived from the
    index) so it stays exact after a decimation halves the buffer. */
@@ -43,8 +61,10 @@ typedef struct __attribute__((packed)) {
     uint16_t interval_s;    /* current sampling interval (doubles when the buffer fills) */
     uint16_t count;         /* number of valid samples */
     int16_t  start_soc_x10; /* SOC at the start, % * 10 */
-    uint8_t  volume;        /* workload volume (Phase C/D) */
-    uint8_t  reserved;
+    uint8_t  volume;        /* applied output level: DAC byte (jack) or AVRCP value (bt), 0 idle */
+    uint8_t  format;        /* FMT_NONE / FMT_MP3 / FMT_WAV */
+    uint32_t rate_hz;       /* source sample rate, 0 when idle */
+    char     file[FILE_MAX];/* looped track display name, empty when idle */
     sample_t samples[MAX_SAMPLES];
 } run_t;
 
@@ -54,6 +74,10 @@ static run_t s_run;   /* ~2.6 KB BSS: the working and persisted curve */
 static bool    s_running;
 static int64_t s_start_us;
 static int64_t s_last_sample_us;
+
+/* Saved so the workload teardown restores normal listening after a cancel/abort. */
+static playlist_repeat_t s_prev_repeat;
+static bool              s_workload_active;
 
 /* Last-run summary for the UI, set at boot (from NVS) and on cancel/finalize. */
 static autonomy_result_t s_last_result = AUTONOMY_RESULT_NONE;
@@ -82,9 +106,67 @@ static const char *result_name(uint8_t r)
     }
 }
 
+static const char *format_name(uint8_t f)
+{
+    switch (f) {
+    case FMT_MP3: return "mp3";
+    case FMT_WAV: return "wav";
+    default:      return "none";
+    }
+}
+
+static uint8_t name_format(const char *name)
+{
+    const char *dot = strrchr(name, '.');
+    if (!dot) return FMT_NONE;
+    if (strcasecmp(dot, ".mp3") == 0) return FMT_MP3;
+    if (strcasecmp(dot, ".wav") == 0) return FMT_WAV;
+    return FMT_NONE;
+}
+
 static size_t blob_len(void)
 {
     return offsetof(run_t, samples) + (size_t)s_run.count * sizeof(sample_t);
+}
+
+/* Set up the audio workload and record its metadata. IDLE stops playback; JACK measures whatever
+   is already playing on the jack, pinning it down for the run (loop-one so it never ends early, a
+   fixed pot-independent volume) and saving the prior repeat mode for the teardown. */
+static esp_err_t workload_start(autonomy_test_t type)
+{
+    if (type == AUTONOMY_TEST_IDLE) {
+        player_stop();                       /* IDLE = silence */
+        return ESP_OK;
+    }
+    if (type != AUTONOMY_TEST_JACK) return ESP_ERR_NOT_SUPPORTED;  /* BT: Phase D */
+
+    player_status_t st;
+    if (player_get_state(&st) != ESP_OK || st.state != PLAYER_PLAYING)
+        return ESP_ERR_INVALID_STATE;        /* nothing to measure: caller must start playback */
+
+    if (st.track.name) {
+        strncpy(s_run.file, st.track.name, FILE_MAX - 1);
+        s_run.format = name_format(st.track.name);
+    }
+    track_meta_t m;
+    if (st.track.path && track_meta_read(st.track.path, &m) == ESP_OK) s_run.rate_hz = m.rate_hz;
+
+    s_prev_repeat     = playlist_get_repeat();
+    s_workload_active = true;
+    playlist_set_repeat(PLAYLIST_REPEAT_ONE); /* loop the single track until the battery dies */
+    volume_set_fixed(JACK_VOL_PCT);           /* deterministic: bypass the pot */
+    s_run.volume = volume_get_level();        /* the fixed DAC level, for the CSV */
+    return ESP_OK;
+}
+
+/* Undo workload_start(): drop the fixed volume and restore the prior repeat mode. Playback is left
+   running — the JACK run used the user's own stream. IDLE changed nothing, so this is a no-op. */
+static void workload_stop(void)
+{
+    if (!s_workload_active) return;
+    s_workload_active = false;
+    volume_clear_fixed();
+    playlist_set_repeat(s_prev_repeat);
 }
 
 static void persist(void)
@@ -120,6 +202,7 @@ static void add_sample(const power_state_t *p)
 
 static void finalize(autonomy_result_t result)
 {
+    workload_stop();                     /* stop playback and restore volume/output/repeat */
     s_run.result   = (uint8_t)result;
     s_run.exported = 0;
     persist();
@@ -157,6 +240,10 @@ static esp_err_t export_csv(void)
     fprintf(f, "# type,%s\n",            type_name(s_run.type));
     fprintf(f, "# result,%s\n",          result_name(s_run.result));
     fprintf(f, "# start_soc_pct,%.1f\n", s_run.start_soc_x10 / 10.0f);
+    fprintf(f, "# file,%s\n",            s_run.file);
+    fprintf(f, "# format,%s\n",          format_name(s_run.format));
+    fprintf(f, "# rate_hz,%u\n",         (unsigned)s_run.rate_hz);
+    fprintf(f, "# volume,%u\n",          s_run.volume);
     fprintf(f, "# duration_s,%u\n",      (unsigned)duration_s());
     fprintf(f, "t_s,voltage_mV,soc_pct,current_mA\n");
     for (uint16_t i = 0; i < s_run.count; i++) {
@@ -191,6 +278,12 @@ esp_err_t autonomy_start(autonomy_test_t type)
     s_run.result        = AUTONOMY_RESULT_INTERRUPTED; /* on-disk "in progress"; finalize() commits the real outcome */
     s_run.interval_s    = SAMPLE_S_0;
     s_run.start_soc_x10 = (int16_t)(p.soc_pct * 10.0f);
+
+    esp_err_t err = workload_start(type);
+    if (err != ESP_OK) {                  /* e.g. nothing playing for JACK: don't start a bogus run */
+        workload_stop();                  /* undo any partial volume/repeat setup */
+        return err;
+    }
 
     s_start_us       = esp_timer_get_time();
     s_last_sample_us = s_start_us;
@@ -262,7 +355,8 @@ esp_err_t autonomy_boot_export(void)
     size_t len = sizeof s_run;
     esp_err_t err = nvs_get_blob(h, NVS_KEY_RUN, &s_run, &len);
     nvs_close(h);
-    if (err != ESP_OK || s_run.magic != RUN_MAGIC) return ESP_OK;      /* nothing stored */
+    if (err != ESP_OK || s_run.magic != RUN_MAGIC || s_run.version != RUN_VERSION)
+        return ESP_OK;                                                 /* nothing stored / old layout */
 
     /* Summary for the UI, whether or not it still needs exporting. */
     s_last_result     = (autonomy_result_t)s_run.result;

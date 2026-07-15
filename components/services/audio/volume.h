@@ -85,6 +85,31 @@ void volume_set_output(volume_output_t out);
 volume_output_t volume_get_output(void);
 
 /**
+ * @brief Override the pot with a fixed volume (for a deterministic measurement).
+ *
+ * While active, volume_poll() ignores the wiper and applies @p percent to the active output
+ * (same curve as the equivalent knob position), so the physical knob no longer affects the
+ * level. Used by the autonomy test to run at a repeatable volume. Clear with volume_clear_fixed().
+ *
+ * @param percent  Fixed volume, 0..100 (clamped).
+ */
+void volume_set_fixed(int percent);
+
+/** @brief Release the fixed-volume override; the pot drives the level again from the next poll. */
+void volume_clear_fixed(void);
+
+/**
+ * @brief The level that would be applied to the active output under the current setting.
+ *
+ * With a fixed override this is the exact level volume_poll() applies (a pure computation from
+ * the fixed percent: the PCM5242 register byte for the DAC, the AVRCP value for Bluetooth). For
+ * the autonomy CSV. Meaningful mainly while a fixed override is active.
+ *
+ * @return DAC volume byte (VOLUME_OUT_DAC) or AVRCP value (VOLUME_OUT_BT); 0 for VOLUME_OUT_NONE.
+ */
+uint8_t volume_get_level(void);
+
+/**
  * @brief Register the Bluetooth absolute-volume setter (e.g. bluetooth_set_absolute_volume).
  *
  * Indirection so the volume service does not hard-link the Bluetooth stack when BT is unused.

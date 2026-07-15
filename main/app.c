@@ -196,7 +196,18 @@ static void draw_test_screen(const autonomy_status_t *st, unsigned phase)
     if (h > 0) snprintf(dur, sizeof dur, "Duration: %uh%02um", (unsigned)h, (unsigned)m);
     else       snprintf(dur, sizeof dur, "Duration: %um", (unsigned)m);
 
-    const char *lines[] = { "Autonomy test in progress", k_mode[st->type], dur, "Press B to cancel" };
+    /* Live battery: state of charge and the fuel gauge's time-to-empty (cached, no I2C here). */
+    power_state_t ps;
+    power_get_state(&ps);
+    char batt[28];
+    if (ps.valid) {
+        uint32_t t = (uint32_t)ps.tte_s, th = t / 3600, tm = (t % 3600) / 60;
+        snprintf(batt, sizeof batt, "%.1f %% - TTE %02u:%02u", ps.soc_pct, (unsigned)th, (unsigned)tm);
+    } else {
+        snprintf(batt, sizeof batt, "-- %% - TTE --:--");
+    }
+
+    const char *lines[] = { "Autonomy test in progress", k_mode[st->type], dur, batt, "Press B to cancel" };
     const int n = (int)(sizeof lines / sizeof lines[0]);
     const int step = GFX_CHAR_H + 6;
     int y0 = (GFX_H - (n * GFX_CHAR_H + (n - 1) * 6)) / 2 + dy;

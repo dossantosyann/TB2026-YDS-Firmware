@@ -22,6 +22,8 @@ static uint8_t s_last_l = 0xFF, s_last_r = 0xFF;  /* 0xFF sentinel: first write 
 static uint8_t s_last_bt = 0xFF;          /* last AVRCP value sent (0xFF: impossible -> first goes) */
 static volume_output_t s_output = VOLUME_OUT_DAC;
 static esp_err_t (*s_bt_set)(uint8_t);    /* Bluetooth setter, registered to avoid a hard BT link */
+static bool    s_fixed;                   /* override active: ignore the pot, use s_fixed_frac */
+static float   s_fixed_frac;              /* fixed volume, 0..1, when s_fixed */
 
 /* Split the knob level into per-channel bytes. Lower byte = louder, so attenuating a channel
    means raising its byte. balance > 0 attenuates right, < 0 attenuates left. Clamp to
@@ -75,13 +77,13 @@ bool volume_poll(int *out_mv, uint8_t *out_level)
     if (!s_ready) return false;
 
     int mv = 0;
-    if (adc_pot_read(s_adc, &mv) != ESP_OK) return false;
+    if (!s_fixed && adc_pot_read(s_adc, &mv) != ESP_OK) return false;  /* skip the ADC when fixed */
     if (out_mv) *out_mv = mv;
 
     switch (s_output) {
     case VOLUME_OUT_DAC: {
         uint8_t l, r;
-        apply_balance(adc_pot_to_volume(mv), &l, &r);
+        apply_balance(s_fixed ? adc_frac_to_volume(s_fixed_frac) : adc_pot_to_volume(mv), &l, &r);
         if (out_level) *out_level = l;
         if (l == s_last_l && r == s_last_r) return false;       /* deadband: no I2C write */
         if (audio_dac_set_volume(l, r) != ESP_OK) return false;
@@ -90,7 +92,7 @@ bool volume_poll(int *out_mv, uint8_t *out_level)
         return true;
     }
     case VOLUME_OUT_BT: {
-        uint8_t v = adc_pot_to_avrcp_volume(mv);
+        uint8_t v = s_fixed ? adc_frac_to_avrcp_volume(s_fixed_frac) : adc_pot_to_avrcp_volume(mv);
         if (out_level) *out_level = v;
         if (v == s_last_bt) return false;                       /* deadband: no AVRCP traffic */
         if (!s_bt_set || s_bt_set(v) != ESP_OK) return false;
@@ -115,6 +117,33 @@ void volume_set_output(volume_output_t out)
 volume_output_t volume_get_output(void)
 {
     return s_output;
+}
+
+void volume_set_fixed(int percent)
+{
+    if (percent < 0)   percent = 0;
+    if (percent > 100) percent = 100;
+    s_fixed = true;
+    s_fixed_frac = percent / 100.0f;
+    s_last_l = s_last_r = 0xFF;            /* force the next poll to apply the fixed level */
+    s_last_bt = 0xFF;
+}
+
+void volume_clear_fixed(void)
+{
+    if (!s_fixed) return;
+    s_fixed = false;
+    s_last_l = s_last_r = 0xFF;            /* force the next poll to re-apply the knob */
+    s_last_bt = 0xFF;
+}
+
+uint8_t volume_get_level(void)
+{
+    if (s_output == VOLUME_OUT_BT)
+        return s_fixed ? adc_frac_to_avrcp_volume(s_fixed_frac) : s_last_bt;
+    if (s_output == VOLUME_OUT_DAC)
+        return s_fixed ? adc_frac_to_volume(s_fixed_frac) : s_last_l;
+    return 0;
 }
 
 void volume_set_bt_handler(esp_err_t (*set_abs_vol)(uint8_t))

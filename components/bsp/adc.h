@@ -54,4 +54,23 @@ uint8_t adc_pot_to_volume(int mv);
  */
 uint8_t adc_pot_to_avrcp_volume(int mv);
 
+/**
+ * @brief Map a 0..1 volume fraction directly to a PCM5242 register byte, bypassing the pot.
+ *
+ * Same curve as adc_pot_to_volume() (it feeds the fraction through the knob's mv range), so a
+ * fixed level matches what the equivalent knob position would produce. For deterministic tests
+ * that must not depend on the physical wiper.
+ *
+ * @param frac  Volume fraction, 0.0 (quietest) .. 1.0 (loudest); clamped.
+ * @return The digital-volume register byte. Pure function, never fails.
+ */
+uint8_t adc_frac_to_volume(float frac);
+
+/**
+ * @brief Map a 0..1 volume fraction directly to an AVRCP absolute-volume value, bypassing the pot.
+ * @param frac  Volume fraction, 0.0 (silent) .. 1.0 (loudest); clamped.
+ * @return The AVRCP absolute-volume value, 0..0x7F. Pure function, never fails.
+ */
+uint8_t adc_frac_to_avrcp_volume(float frac);
+
 /** @} */
