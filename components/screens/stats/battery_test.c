@@ -113,9 +113,10 @@ static void render(screen_t *self)
     gfx_color_t res_c = DIM;
     if (res != AUTONOMY_RESULT_NONE) {
         type_s = k_types[autonomy_get_last_type()];
-        if      (res == AUTONOMY_RESULT_CANCELLED) { res_s = "CANCELLED"; res_c = WARN; }
-        else if (res == AUTONOMY_RESULT_ABORTED)   { res_s = "ABORTED";   res_c = gfx_rgb(255, 60, 60); }
-        else                                       { res_s = "OK";        res_c = OKC; }
+        if      (res == AUTONOMY_RESULT_CANCELLED)   { res_s = "CANCELLED";   res_c = WARN; }
+        else if (res == AUTONOMY_RESULT_ABORTED)     { res_s = "ABORTED";     res_c = gfx_rgb(255, 60, 60); }
+        else if (res == AUTONOMY_RESULT_INTERRUPTED) { res_s = "INTERRUPTED"; res_c = WARN; }
+        else                                         { res_s = "OK";          res_c = OKC; }
     }
     char lb[24];
     gfx_draw_text(PAD_X, LAST_Y, "Last run:", GFX_WHITE, 1);

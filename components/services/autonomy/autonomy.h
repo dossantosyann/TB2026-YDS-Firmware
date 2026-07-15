@@ -39,7 +39,8 @@ typedef enum {
     AUTONOMY_RESULT_NONE = 0,   ///< No run recorded yet.
     AUTONOMY_RESULT_CANCELLED,  ///< The user cancelled the run (B).
     AUTONOMY_RESULT_COMPLETED,  ///< The run ran to battery shutdown.
-    AUTONOMY_RESULT_ABORTED,    ///< USB was plugged mid-run: the measurement is invalid, discarded.
+    AUTONOMY_RESULT_ABORTED,    ///< USB was plugged mid-run: the measurement is invalid.
+    AUTONOMY_RESULT_INTERRUPTED,///< The run never finished cleanly (crash/reset mid-test); partial data.
 } autonomy_result_t;
 
 /** @brief Snapshot of the running test, for the in-progress screen. */

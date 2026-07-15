@@ -74,10 +74,11 @@ static const char *type_name(uint8_t t)
 static const char *result_name(uint8_t r)
 {
     switch (r) {
-    case AUTONOMY_RESULT_CANCELLED: return "cancelled";
-    case AUTONOMY_RESULT_COMPLETED: return "completed";
-    case AUTONOMY_RESULT_ABORTED:   return "aborted";
-    default:                        return "none";
+    case AUTONOMY_RESULT_CANCELLED:   return "cancelled";
+    case AUTONOMY_RESULT_COMPLETED:   return "completed";
+    case AUTONOMY_RESULT_ABORTED:     return "aborted";
+    case AUTONOMY_RESULT_INTERRUPTED: return "interrupted";
+    default:                          return "none";
     }
 }
 
@@ -187,7 +188,7 @@ esp_err_t autonomy_start(autonomy_test_t type)
     s_run.magic         = RUN_MAGIC;
     s_run.version       = RUN_VERSION;
     s_run.type          = (uint8_t)type;
-    s_run.result        = AUTONOMY_RESULT_COMPLETED;   /* provisional; cancel overwrites */
+    s_run.result        = AUTONOMY_RESULT_INTERRUPTED; /* on-disk "in progress"; finalize() commits the real outcome */
     s_run.interval_s    = SAMPLE_S_0;
     s_run.start_soc_x10 = (int16_t)(p.soc_pct * 10.0f);
 
