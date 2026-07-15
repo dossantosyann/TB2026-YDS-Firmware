@@ -117,6 +117,17 @@ power_usb_route_t power_get_usb_route(void);
 void power_usb_autoroute_start(void);
 
 /**
+ * @brief Enable or disable the built-in critical-battery auto-shutdown (default enabled).
+ *
+ * The autonomy test disables it while a run is in progress so the service can detect the
+ * critical level itself, write its final log, and then call power_shutdown() in order. Restore
+ * it (true) when the run ends or is cancelled.
+ *
+ * @param enable  true to keep the built-in graceful shutdown, false to suspend it.
+ */
+void power_set_low_batt_shutdown(bool enable);
+
+/**
  * @brief Register a callback to run at the start of power_shutdown().
  *
  * Lets a subsystem clean up before the rail drops without power having to know the

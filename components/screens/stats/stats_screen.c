@@ -7,6 +7,7 @@
  * task re-renders it every DETAIL_REFRESH_MS for live values; the menu itself stays event-driven.
  */
 #include "stats_screen.h"
+#include "battery_test.h"
 #include "navigator.h"
 #include "status_bar.h"
 #include "gfx.h"
@@ -38,9 +39,9 @@
 /* ---- shared layout + line cursor ------------------------------------------------- */
 
 #define PAD_X     6
-#define TITLE_Y   (STATUS_BAR_H + 2)
-#define BODY_Y    (TITLE_Y + 16)   /* gap under the title */
+#define BODY_Y    (STATUS_BAR_H + 4)   /* content starts just under the status bar (no page title) */
 #define LINE_H    12
+#define BATT_HINT_Y 162                /* footer hint on the Battery page */
 
 /* Peripherals page: bus groups are spaced by GROUP_GAP so a header sits the same
    distance below the previous line as BODY_Y sits below the title. STATUS_X is the
@@ -52,10 +53,9 @@
 
 static int s_y;   /* current draw row; advanced by emit()/emitf() */
 
-static void page_begin(const char *title)
+static void page_begin(void)
 {
     gfx_clear(GFX_BLACK);
-    gfx_draw_text(PAD_X, TITLE_Y, title, GFX_WHITE, 1);
     s_y = BODY_Y;
 }
 
@@ -100,7 +100,7 @@ static const char *fmt_dur(char *buf, size_t n, float s)
 static void render_battery(screen_t *self)
 {
     (void)self;
-    page_begin("Battery");
+    page_begin();
 
     fuel_gauge_data_t d;
     if (fuel_gauge_read(&d) != ESP_OK) {
@@ -135,12 +135,14 @@ static void render_battery(screen_t *self)
         emit("INOKB:       read error", gfx_rgb(255, 80, 80));
     emitf(GFX_WHITE, "USB mux:     %s",
           power_get_usb_route() == POWER_USB_CHARGE ? "MAX77757" : "CP2102N");
+
+    gfx_draw_text(PAD_X, BATT_HINT_Y, "Press A: autonomy test", gfx_rgb(255, 120, 0), 1);
 }
 
 static void render_storage(screen_t *self)
 {
     (void)self;
-    page_begin("Storage");
+    page_begin();
 
     bool present = sdcard_present();
     bool ready   = storage_ready();
@@ -186,7 +188,7 @@ static const char *reset_reason_str(esp_reset_reason_t r)
 static void render_system(screen_t *self)
 {
     (void)self;
-    page_begin("System");
+    page_begin();
 
     uint32_t sec = (uint32_t)(esp_timer_get_time() / 1000000);
     uint32_t h = sec / 3600, m = (sec % 3600) / 60, s = sec % 60;
@@ -244,7 +246,7 @@ static void probe_line(const char *name, i2c_master_bus_handle_t bus, uint8_t ad
 static void render_peripherals(screen_t *self)
 {
     (void)self;
-    page_begin("Peripherals");
+    page_begin();
 
     /* I2C: the one bus we can actually probe by address. The title gap (BODY_Y) already
        separates this first header, so it is emitted without an extra GROUP_GAP. */
@@ -283,7 +285,7 @@ static const char *const s_btn_labels[INPUT_BTN_COUNT] = {
 static void render_inputs(screen_t *self)
 {
     (void)self;
-    page_begin("Inputs");
+    page_begin();
 
     input_diag_t in;
     input_get_diag(&in);
@@ -312,6 +314,17 @@ static void detail_input(screen_t *self, ui_event_t ev)
 
 static void noop(screen_t *self) { (void)self; }
 
+/* Battery page adds A (SELECT) to open the autonomy-test screen; other pages only pop. */
+static void battery_input(screen_t *self, ui_event_t ev)
+{
+    (void)self;
+    switch (ev) {
+    case UI_EVENT_SELECT: navigator_push(battery_test_screen()); break;
+    case UI_EVENT_BACK:   navigator_pop();                       break;
+    default: break;
+    }
+}
+
 #define DETAIL(render_fn) {                  \
         .on_enter     = noop,                \
         .on_exit      = noop,                \
@@ -320,7 +333,13 @@ static void noop(screen_t *self) { (void)self; }
         .refresh_ms   = DETAIL_REFRESH_MS,   \
     }
 
-static screen_t s_battery = DETAIL(render_battery);
+static screen_t s_battery = {
+    .on_enter     = noop,
+    .on_exit      = noop,
+    .handle_input = battery_input,
+    .render       = render_battery,
+    .refresh_ms   = DETAIL_REFRESH_MS,
+};
 static screen_t s_storage = DETAIL(render_storage);
 static screen_t s_system  = DETAIL(render_system);
 static screen_t s_inputs  = DETAIL(render_inputs);

@@ -4,6 +4,7 @@ idf_component_register(
         "root_menu.c"
         "storage/storage_screen.c"
         "stats/stats_screen.c"
+        "stats/battery_test.c"
         "settings/settings_screen.c"
         "audio/playlist_browser.c"
         "audio/now_playing.c"
@@ -13,5 +14,5 @@ idf_component_register(
         "settings/screen_settings.c"
         "settings/power_settings.c"
     INCLUDE_DIRS "." "audio" "storage" "stats" "settings"
-    REQUIRES ui audio audio_dac bluetooth power settings storage input bsp fuel_gauge gpio_expander sdcard display_oled esp_timer esp_app_format
+    REQUIRES ui audio audio_dac bluetooth power settings storage input bsp fuel_gauge gpio_expander sdcard display_oled autonomy esp_timer esp_app_format
 )

@@ -12,6 +12,7 @@
 #include "sdcard.h"
 #include "input.h"
 #include "settings.h"
+#include "autonomy.h"
 #include "diag.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -83,6 +84,7 @@ static void sd_watch(void)
 
 static void power_off_watch(void)
 {
+    if (autonomy_is_running()) return;            /* a test runs until battery shutdown, not idle */
     uint32_t off_ms = power_get_poweroff_ms();
     if (off_ms == 0) return;                      /* auto power-off disabled */
     if (input_idle_ms() < off_ms) return;
@@ -119,7 +121,7 @@ static void maintenance_task(void *arg)
     for (;;) {
         volume_poll(NULL, NULL);
         player_poll();
-        if (++pwr >= MAINT_PWR_DIV) { power_tick(); power_off_watch(); pwr = 0; }
+        if (++pwr >= MAINT_PWR_DIV) { power_tick(); autonomy_tick(); power_off_watch(); pwr = 0; }
         if (++sd >= MAINT_SD_DIV) { sd_watch(); sd = 0; }
         diag_tick(MAINT_VOL_MS);   /* dumps the report every DIAG_DUMP_MS; no-op when off */
         vTaskDelay(period);

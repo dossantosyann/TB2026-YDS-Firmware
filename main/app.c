@@ -11,6 +11,7 @@
 #include "power.h"
 #include "fuel_gauge.h"
 #include "maintenance.h"
+#include "autonomy.h"
 #include "storage.h"
 #include "playlist.h"
 #include "audio_dac.h"
@@ -55,6 +56,11 @@ static void storage_scan_task(void *arg)
             }
         }
     }
+
+    /* SD is mounted now: export a pending autonomy run (from a previous battery-shutdown) to a
+       CSV, and load the last-run summary for the battery-test screen. */
+    autonomy_boot_export();
+
     diag_task_exit();
     vTaskDelete(NULL);
 }
@@ -125,6 +131,10 @@ void app_init(void)
    render + SPI blit (~20 ms every 30 s): negligible energy. */
 #define LOCK_SHIFT_MS 30000
 
+/* Autonomy test screen: poll this often so an external abort (USB plugged, decided by the
+   autonomy service) is caught within ~1 s, while the frame is only redrawn every LOCK_SHIFT_MS. */
+#define TEST_POLL_MS 1000
+
 static void draw_circle(int cx, int cy, int r, gfx_color_t color)
 {
     int x = r, y = 0, err = 1 - r;   /* midpoint circle */
@@ -167,6 +177,52 @@ static void draw_lock_screen(unsigned phase)
     gfx_flush();
 }
 
+/* Autonomy-test-in-progress screen: a screensaver sibling of the lock screen. Shows the
+   workload and elapsed time in dim text, shifted by phase (same anti-burn-in scheme), with a
+   "Press B to cancel" hint. Redrawn on the lock-shift period, so the duration ticks in minutes
+   and no pixel ages faster than its neighbours; energy per redraw is negligible. */
+static void draw_test_screen(const autonomy_status_t *st, unsigned phase)
+{
+    static const struct { int8_t dx, dy; } k_off[] = {
+        {0, 0}, {3, 2}, {-3, -2}, {-3, 2}, {3, -2},
+    };
+    static const char *const k_mode[] = { "IDLE mode", "JACK mode", "BT mode" };
+    const gfx_color_t gray = gfx_rgb(90, 90, 90);
+    int dx = k_off[phase % (sizeof k_off / sizeof k_off[0])].dx;
+    int dy = k_off[phase % (sizeof k_off / sizeof k_off[0])].dy;
+
+    uint32_t s = st->elapsed_ms / 1000, h = s / 3600, m = (s % 3600) / 60;
+    char dur[24];
+    if (h > 0) snprintf(dur, sizeof dur, "Duration: %uh%02um", (unsigned)h, (unsigned)m);
+    else       snprintf(dur, sizeof dur, "Duration: %um", (unsigned)m);
+
+    const char *lines[] = { "Autonomy test in progress", k_mode[st->type], dur, "Press B to cancel" };
+    const int n = (int)(sizeof lines / sizeof lines[0]);
+    const int step = GFX_CHAR_H + 6;
+    int y0 = (GFX_H - (n * GFX_CHAR_H + (n - 1) * 6)) / 2 + dy;
+
+    gfx_clear(GFX_BLACK);
+    for (int i = 0; i < n; i++) {
+        int w = (int)strlen(lines[i]) * GFX_CHAR_W;
+        gfx_draw_text((GFX_W - w) / 2 + dx, y0 + i * step, lines[i], gray, 1);
+    }
+    gfx_flush();
+}
+
+/* Big error shown when a run is aborted mid-test (USB plugged). Dismissed by any key. */
+static void draw_test_error(void)
+{
+    const gfx_color_t red = gfx_rgb(255, 40, 40);
+    const char *l1 = "USB PLUGGED";
+    const char *l2 = "Test aborted";
+    const char *l3 = "Press any key";
+    gfx_clear(GFX_BLACK);
+    gfx_draw_text((GFX_W - (int)strlen(l1) * GFX_CHAR_W * 2) / 2, 54, l1, red, 2);
+    gfx_draw_text((GFX_W - (int)strlen(l2) * GFX_CHAR_W * 2) / 2, 82, l2, red, 2);
+    gfx_draw_text((GFX_W - (int)strlen(l3) * GFX_CHAR_W) / 2, 120, l3, gfx_rgb(120, 120, 120), 1);
+    gfx_flush();
+}
+
 static void ui_task(void *arg)
 {
     (void)arg;
@@ -184,7 +240,7 @@ static void ui_task(void *arg)
     /* SD scan in background so the UI is responsive while the card is enumerated.
        Priority 1 (just above idle) keeps it below the UI task. Stack covers the
        recursive scan (3 levels × 320 B frame) with margin. */
-    xTaskCreate(storage_scan_task, "storage_scan", 4096, NULL, 1, NULL);
+    xTaskCreate(storage_scan_task, "storage_scan", 5120, NULL, 1, NULL);
 
     /* Push the home screen and paint it once (navigator_push doesn't render). */
     screen_t *home = root_menu();
@@ -202,6 +258,50 @@ static void ui_task(void *arg)
     bool wdt_on = false;                                  /* UI task subscribed to the task WDT? */
     unsigned lock_phase = 0;
     for (;;) {
+        /* Autonomy test in progress: own the screen like the lock does, bypassing the navigator
+           and the idle-lock (the test screen IS the screensaver here). B cancels; other buttons
+           are ignored. Poll in TEST_POLL_MS slices so an external abort (USB) is caught quickly,
+           but only redraw every LOCK_SHIFT_MS so the panel cost stays negligible. */
+        {
+            static bool     test_prev;
+            static unsigned test_phase;
+            static int      test_poll;
+            bool running = autonomy_is_running();
+
+            if (test_prev && !running) {
+                /* The run just ended (B, or a service-side abort). Show the error for an abort,
+                   then return to the battery-test screen, which reflects the last result. */
+                if (autonomy_get_last_result() == AUTONOMY_RESULT_ABORTED) {
+                    draw_test_error();
+                    ui_event_t ev;
+                    input_get_event(&ev, portMAX_DELAY);   /* any key dismisses; also resets idle */
+                }
+                screen_on = true;
+                navigator_render();
+                gfx_flush();
+            }
+            if (running && !test_prev) { test_phase = 0; test_poll = 0; }
+            test_prev = running;
+
+            if (running) {
+                if (wdt_on) { esp_task_wdt_delete(NULL); wdt_on = false; }
+                if (test_poll == 0) {   /* redraw on entry and each shift period */
+                    autonomy_status_t st;
+                    autonomy_get_status(&st);
+                    draw_test_screen(&st, test_phase);
+                }
+                ui_event_t ev;
+                if (input_get_event(&ev, pdMS_TO_TICKS(TEST_POLL_MS))) {
+                    if (ev == UI_EVENT_BACK) autonomy_cancel();
+                    test_poll = 0;   /* force a redraw next pass if still running */
+                } else if (++test_poll >= (int)(LOCK_SHIFT_MS / TEST_POLL_MS)) {
+                    test_poll = 0;
+                    test_phase++;    /* shift the text + tick the duration */
+                }
+                continue;
+            }
+        }
+
         TickType_t wait = pdMS_TO_TICKS(LOCK_SHIFT_MS);   /* locked: next hint shift */
         bool live = false;                                /* a live screen this iteration? */
         if (screen_on) {

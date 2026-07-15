@@ -34,6 +34,7 @@ static const char *TAG = "power";
 
 static power_state_t          s_state;          /* zero-init: valid=false until the first good read */
 static power_shutdown_hook_t  s_shutdown_hook;  /* NULL until registered */
+static bool                   s_low_batt_shutdown = true;  /* built-in critical auto-off (autonomy suspends it) */
 
 /* Autoroute re-arming. s_usb_routing keeps a second task from racing one already in flight.
    s_ext_prev starts true so a cable already in at boot does not re-trigger the hand-off that
@@ -94,8 +95,10 @@ void power_tick(void)
     else                                 s_state.level = POWER_LEVEL_NORMAL;
 
     /* Graceful auto-off: only on a real battery that is critically low and not being
-       fed. The external-power gate keeps the device alive on USB / the bench. */
-    if (s_state.level == POWER_LEVEL_CRITICAL && !s_state.charging && !s_state.external_power) {
+       fed. The external-power gate keeps the device alive on USB / the bench. Suspended
+       while an autonomy test runs, which owns the shutdown so it can write its log first. */
+    if (s_low_batt_shutdown &&
+        s_state.level == POWER_LEVEL_CRITICAL && !s_state.charging && !s_state.external_power) {
         ESP_LOGW(TAG, "battery critical (%.0f%%), shutting down", d.soc_pct);
         power_shutdown();
     }
@@ -154,6 +157,11 @@ void power_usb_autoroute_start(void)
         power_set_usb_route(POWER_USB_DATA);   /* never strand the lines on the charger */
         s_usb_routing = false;
     }
+}
+
+void power_set_low_batt_shutdown(bool enable)
+{
+    s_low_batt_shutdown = enable;
 }
 
 void power_set_shutdown_hook(power_shutdown_hook_t hook)
