@@ -16,3 +16,9 @@ static inline void heap_caps_free(void *ptr)
 {
     free(ptr);
 }
+
+static inline size_t heap_caps_get_free_size(uint32_t caps)
+{
+    (void)caps;
+    return 4u * 1024 * 1024;
+}

@@ -5,5 +5,6 @@ menu_screen_test
 player_test
 decoder_test
 track_meta_test
+screens_snapshot
 *.ppm
 *.png

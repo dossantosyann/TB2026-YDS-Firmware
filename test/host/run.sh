@@ -49,7 +49,7 @@ cc -std=c11 -Wall -Wextra \
    -I"$here/fakes" \
    "$root/components/ui/gfx.c" "$root/components/ui/icons.c" \
    "$root/components/ui/navigator.c" \
-   "$root/components/screens/audio/music_screen.c" "$root/components/screens/storage/storage_screen.c" \
+   "$root/components/screens/audio/now_playing.c" "$root/components/screens/storage/storage_screen.c" \
    "$root/components/screens/stats/stats_screen.c" "$root/components/screens/settings/settings_screen.c" \
    "$root/components/screens/root_menu.c" "$here/fakes/status_bar_stub.c" \
    "$here/root_menu_test.c" \
