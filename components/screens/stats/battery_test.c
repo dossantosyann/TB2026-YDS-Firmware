@@ -51,7 +51,7 @@
 
 #define NAME_MAX 22    /* device/track names are truncated to fit a centred "< name >" row */
 
-#define READY_SOC_PCT 99.5f   /* a run is only meaningful starting from a full cell */
+#define READY_SOC_PCT 99.0f   /* a run is only meaningful starting from a full cell */
 
 /* Workload profiles; order matches autonomy_test_t. */
 static const char *const k_types[] = { "Idle", "Jack", "BT" };
