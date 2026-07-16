@@ -12,6 +12,8 @@
  */
 #pragma once
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "esp_err.h"
 #include "driver/i2c_master.h"
 
@@ -62,5 +64,44 @@ esp_err_t fuel_gauge_init(i2c_master_bus_handle_t bus);
  * @return ESP_OK on success, or the first I2C error encountered.
  */
 esp_err_t fuel_gauge_read(fuel_gauge_data_t *out);
+
+/**
+ * @brief Register-level snapshot for the debug page: config vs expected + learned state.
+ *
+ * The *_want fields are the raw values fuel_gauge_init() writes during EZ config, so the
+ * UI can flag a gauge that lost its configuration (POR) or holds different constants.
+ * Raw capacity LSB is 1 mAh with the board's 5 mOhm sense resistor.
+ */
+typedef struct {
+    bool     por;               ///< Status.POR: the gauge reset and lost its configuration.
+    uint16_t design_cap_raw;    ///< DesignCap (0x18) as read back.
+    uint16_t design_cap_want;   ///< DesignCap value EZ config writes.
+    uint16_t ichg_term_raw;     ///< IChgTerm (0x1E) as read back.
+    uint16_t ichg_term_want;    ///< IChgTerm value EZ config writes.
+    uint16_t vempty_raw;        ///< VEmpty (0x3A) as read back.
+    uint16_t vempty_want;       ///< VEmpty value EZ config writes.
+    float    full_cap_rep_mah;  ///< FullCapRep: learned reported full capacity, mAh.
+    float    full_cap_nom_mah;  ///< FullCapNom: learned nominal full capacity, mAh.
+} fuel_gauge_debug_t;
+
+/**
+ * @brief Read the configuration and learned-capacity registers for the debug page.
+ *
+ * @param[out] out  Receives the snapshot.
+ * @return ESP_OK on success, or the first I2C error encountered.
+ */
+esp_err_t fuel_gauge_read_debug(fuel_gauge_debug_t *out);
+
+/**
+ * @brief Re-run the EZ model load to purge the learned battery state.
+ *
+ * Preserves the cycle counter across the reload; everything else learned (full capacity,
+ * hence health) restarts from the design values, and SOC is re-estimated from voltage —
+ * best done at rest, right after a charge the estimate overshoots for a few minutes.
+ *
+ * @return ESP_OK on success, ESP_ERR_TIMEOUT if the model refresh never completes,
+ *         ESP_ERR_INVALID_RESPONSE if a config write does not verify, or the I2C error.
+ */
+esp_err_t fuel_gauge_reload_ez(void);
 
 /** @} */

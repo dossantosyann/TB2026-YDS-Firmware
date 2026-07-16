@@ -27,12 +27,55 @@
 #include "esp_log.h"
 #include "esp_pm.h"
 #include "esp_task_wdt.h"
+#include "esp_core_dump.h"
+#include "esp_partition.h"
+#include "sdcard.h"
 #include "diag.h"
+#include <stdio.h>
 #include <string.h>
 
 /* Shared I2C master bus, owned here and handed to every device on it (expander now;
    fuel gauge / DAC as those services are wired in). */
 static i2c_master_bus_handle_t s_i2c;
+
+/* A crash left a core dump in flash: copy it to the SD card for offline analysis
+   (espcoredump.py info_corefile -t raw -c core_NNN.bin <app.elf>), then erase it so the
+   verdict re-arms — a stale dump would label every later power loss as a crash. Erased
+   even if the copy fails: a correct verdict next boot beats keeping an unreadable dump. */
+static void coredump_export(void)
+{
+    if (power_last_off_cause() != POWER_OFF_CRASH) return;
+
+    size_t addr = 0, size = 0;
+    const esp_partition_t *part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, NULL);
+    if (part && esp_core_dump_image_get(&addr, &size) == ESP_OK && storage_ready()) {
+        char path[48];
+        FILE *f = NULL;
+        for (int i = 0; i < 1000 && !f; i++) {        /* first unused name */
+            snprintf(path, sizeof path, "%s/core_%03d.bin", SDCARD_MOUNT_POINT, i);
+            f = fopen(path, "r");
+            if (f) { fclose(f); f = NULL; continue; } /* taken: try the next */
+            f = fopen(path, "w");
+            break;
+        }
+        if (f) {
+            char buf[512];
+            size_t done = 0;
+            bool ok = true;
+            while (ok && done < size) {
+                size_t n = size - done > sizeof buf ? sizeof buf : size - done;
+                ok = esp_partition_read(part, done, buf, n) == ESP_OK &&
+                     fwrite(buf, 1, n, f) == n;
+                done += n;
+            }
+            fclose(f);
+            if (ok) ESP_LOGW("app", "core dump saved to %s (%u bytes)", path, (unsigned)size);
+            else    ESP_LOGE("app", "core dump copy to %s failed", path);
+        }
+    }
+    esp_core_dump_image_erase();
+}
 
 static void storage_scan_task(void *arg)
 {
@@ -57,8 +100,10 @@ static void storage_scan_task(void *arg)
         }
     }
 
-    /* SD is mounted now: export a pending autonomy run (from a previous battery-shutdown) to a
-       CSV, and load the last-run summary for the battery-test screen. */
+    /* SD is mounted now: save any crash core dump to the card (then erase it from flash),
+       export a pending autonomy run (from a previous battery-shutdown) to a CSV, and load
+       the last-run summary for the battery-test screen. */
+    coredump_export();
     autonomy_boot_export();
 
     diag_task_exit();
@@ -82,6 +127,10 @@ void app_init(void)
     /* Bring up NVS first: settings_init() runs nvs_flash_init() (erase-on-corrupt),
        so every NVS consumer (settings, bluetooth) can just nvs_open afterwards. */
     ESP_ERROR_CHECK(settings_init());
+
+    /* Classify how the last session ended (clean / crash / power loss) before anything
+       can power off and rewrite the marker. */
+    power_boot_off_check();
 
     /* Shared I2C bus + GPIO expander. The expander backs the buttons (read by the
        input service) and the DAC mute / amp shutdown, so it must be up before

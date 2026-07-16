@@ -28,6 +28,8 @@
 
 /* Output registers. */
 #define REG_REP_CAP      0x05
+#define REG_FULL_CAP_REP 0x10
+#define REG_FULL_CAP_NOM 0x23
 #define REG_REP_SOC      0x06
 #define REG_AGE          0x07
 #define REG_TEMP         0x08
@@ -183,4 +185,43 @@ esp_err_t fuel_gauge_read(fuel_gauge_data_t *out)
     out->cycles = raw * CYCLES_LSB;
 
     return ESP_OK;
+}
+
+esp_err_t fuel_gauge_read_debug(fuel_gauge_debug_t *out)
+{
+    uint16_t raw;
+    esp_err_t err;
+
+    if ((err = read_reg(REG_STATUS, &raw)) != ESP_OK) return err;
+    out->por = (raw & STATUS_POR) != 0;
+
+    if ((err = read_reg(REG_DESIGN_CAP, &out->design_cap_raw)) != ESP_OK) return err;
+    if ((err = read_reg(REG_ICHG_TERM, &out->ichg_term_raw)) != ESP_OK) return err;
+    if ((err = read_reg(REG_VEMPTY, &out->vempty_raw)) != ESP_OK) return err;
+    out->design_cap_want = DESIGN_CAP_RAW;
+    out->ichg_term_want  = ICHG_TERM_RAW;
+    out->vempty_want     = VEMPTY_DEFAULT;
+
+    if ((err = read_reg(REG_FULL_CAP_REP, &raw)) != ESP_OK) return err;
+    out->full_cap_rep_mah = raw * CAP_LSB_MAH;
+    if ((err = read_reg(REG_FULL_CAP_NOM, &raw)) != ESP_OK) return err;
+    out->full_cap_nom_mah = raw * CAP_LSB_MAH;
+
+    return ESP_OK;
+}
+
+esp_err_t fuel_gauge_reload_ez(void)
+{
+    /* The model load resets the learned state; the cycle count is the one piece worth
+       keeping (it is in Maxim's save/restore list) — health restarts by design. */
+    uint16_t cycles;
+    esp_err_t err = read_reg(REG_CYCLES, &cycles);
+    if (err != ESP_OK) return err;
+
+    if ((err = load_ez_config()) != ESP_OK) return err;
+    if ((err = write_verify(REG_CYCLES, cycles)) != ESP_OK) return err;
+
+    uint16_t status;
+    if ((err = read_reg(REG_STATUS, &status)) != ESP_OK) return err;
+    return write_reg(REG_STATUS, status & ~STATUS_POR);
 }

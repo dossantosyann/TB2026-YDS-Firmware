@@ -10,8 +10,10 @@
 #include "player.h"
 #include "playlist.h"
 #include "volume.h"
+#include "bluetooth.h"
 #include "track_meta.h"
 #include "esp_timer.h"
+#include "esp_app_desc.h"
 #include "esp_log.h"
 #include "nvs.h"
 #include <stddef.h>
@@ -25,7 +27,7 @@ static const char *TAG = "autonomy";
 #define NVS_KEY_RUN  "run"
 #define NVS_KEY_SEQ  "seq"          /* monotonic run counter, for unique CSV file names */
 #define RUN_MAGIC    0xA5D50001u
-#define RUN_VERSION  2              /* v2 added the workload header (file/format/rate/volume) */
+#define RUN_VERSION  3              /* v3 added the firmware version (v2: workload header) */
 #define MAX_SAMPLES  256            /* blob stays ~2.5 KB — the NVS partition is only 24 KB */
 #define SAMPLE_S_0   60             /* initial seconds between samples ("every minute") */
 
@@ -65,6 +67,8 @@ typedef struct __attribute__((packed)) {
     uint8_t  format;        /* FMT_NONE / FMT_MP3 / FMT_WAV */
     uint32_t rate_hz;       /* source sample rate, 0 when idle */
     char     file[FILE_MAX];/* looped track display name, empty when idle */
+    char     fw[32];        /* app version at run start (esp_app_desc), NOT at export: a reflash
+                               between the run's death and the boot export must not relabel it */
     sample_t samples[MAX_SAMPLES];
 } run_t;
 
@@ -129,20 +133,39 @@ static size_t blob_len(void)
     return offsetof(run_t, samples) + (size_t)s_run.count * sizeof(sample_t);
 }
 
-/* Set up the audio workload and record its metadata. IDLE stops playback; JACK measures whatever
-   is already playing on the jack, pinning it down for the run (loop-one so it never ends early, a
-   fixed pot-independent volume) and saving the prior repeat mode for the teardown. */
+/* Set up the audio workload and record its metadata. IDLE stops playback; JACK and BT measure
+   whatever is already playing on the respective output (the jack DAC, or a connected Bluetooth
+   sink), pinning it down for the run (loop-one so it never ends early, a fixed pot-independent
+   volume) and saving the prior repeat mode for the teardown. BT additionally requires an
+   established link — without a sink the ESP32 (an A2DP source) transmits nothing, so the reading
+   would miss the dominant RF+SBC cost. */
 static esp_err_t workload_start(autonomy_test_t type)
 {
     if (type == AUTONOMY_TEST_IDLE) {
         player_stop();                       /* IDLE = silence */
         return ESP_OK;
     }
-    if (type != AUTONOMY_TEST_JACK) return ESP_ERR_NOT_SUPPORTED;  /* BT: Phase D */
 
     player_status_t st;
     if (player_get_state(&st) != ESP_OK || st.state != PLAYER_PLAYING)
         return ESP_ERR_INVALID_STATE;        /* nothing to measure: caller must start playback */
+
+    int vol_pct;
+    switch (type) {
+    case AUTONOMY_TEST_JACK:
+        vol_pct = JACK_VOL_PCT;
+        break;
+    case AUTONOMY_TEST_BT:
+        if (!bluetooth_is_connected()) return ESP_ERR_INVALID_STATE;  /* no sink: reading is bogus */
+        if (volume_get_output() != VOLUME_OUT_BT) {
+            esp_err_t r = player_set_output(VOLUME_OUT_BT);   /* route the stream to BT ourselves */
+            if (r != ESP_OK) return r;   /* e.g. speaker has not acked its volume yet: don't start blind */
+        }
+        vol_pct = BT_VOL_PCT;
+        break;
+    default:
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 
     if (st.track.name) {
         strncpy(s_run.file, st.track.name, FILE_MAX - 1);
@@ -154,8 +177,8 @@ static esp_err_t workload_start(autonomy_test_t type)
     s_prev_repeat     = playlist_get_repeat();
     s_workload_active = true;
     playlist_set_repeat(PLAYLIST_REPEAT_ONE); /* loop the single track until the battery dies */
-    volume_set_fixed(JACK_VOL_PCT);           /* deterministic: bypass the pot */
-    s_run.volume = volume_get_level();        /* the fixed DAC level, for the CSV */
+    volume_set_fixed(vol_pct);                /* deterministic: bypass the pot */
+    s_run.volume = volume_get_level();        /* the fixed level (DAC byte / AVRCP value), for the CSV */
     return ESP_OK;
 }
 
@@ -215,8 +238,10 @@ static void finalize(autonomy_result_t result)
 }
 
 /* Write the current run to a uniquely-named CSV on the SD card and mark it exported. The file
-   name carries a monotonic counter (NVS) so a new run never overwrites an earlier one. */
-static esp_err_t export_csv(void)
+   name carries a monotonic counter (NVS) so a new run never overwrites an earlier one.
+   end_cause labels how the board died mid-run (clean/crash/power-loss); it only makes sense
+   for the boot export — an in-session export means the board never died — so pass NULL there. */
+static esp_err_t export_csv(const char *end_cause)
 {
     if (!storage_ready()) return ESP_ERR_INVALID_STATE;   /* no card: retry at boot / re-dump */
 
@@ -237,6 +262,7 @@ static esp_err_t export_csv(void)
         return ESP_FAIL;
     }
     fprintf(f, "# autonomy test\n");
+    fprintf(f, "# fw,%s\n",              s_run.fw);
     fprintf(f, "# type,%s\n",            type_name(s_run.type));
     fprintf(f, "# result,%s\n",          result_name(s_run.result));
     fprintf(f, "# start_soc_pct,%.1f\n", s_run.start_soc_x10 / 10.0f);
@@ -245,6 +271,7 @@ static esp_err_t export_csv(void)
     fprintf(f, "# rate_hz,%u\n",         (unsigned)s_run.rate_hz);
     fprintf(f, "# volume,%u\n",          s_run.volume);
     fprintf(f, "# duration_s,%u\n",      (unsigned)duration_s());
+    if (end_cause) fprintf(f, "# end,%s\n", end_cause);
     fprintf(f, "t_s,voltage_mV,soc_pct,current_mA\n");
     for (uint16_t i = 0; i < s_run.count; i++) {
         const sample_t *s = &s_run.samples[i];
@@ -278,6 +305,7 @@ esp_err_t autonomy_start(autonomy_test_t type)
     s_run.result        = AUTONOMY_RESULT_INTERRUPTED; /* on-disk "in progress"; finalize() commits the real outcome */
     s_run.interval_s    = SAMPLE_S_0;
     s_run.start_soc_x10 = (int16_t)(p.soc_pct * 10.0f);
+    strncpy(s_run.fw, esp_app_get_description()->version, sizeof s_run.fw - 1);
 
     esp_err_t err = workload_start(type);
     if (err != ESP_OK) {                  /* e.g. nothing playing for JACK: don't start a bogus run */
@@ -298,7 +326,7 @@ void autonomy_cancel(void)
 {
     if (!s_running) return;
     finalize(AUTONOMY_RESULT_CANCELLED);
-    export_csv();   /* dump now (the device is on); if no card, stays pending for the next boot */
+    export_csv(NULL);   /* dump now (the device is on); if no card, stays pending for the next boot */
 }
 
 bool autonomy_is_running(void)
@@ -327,7 +355,7 @@ void autonomy_tick(void)
        "aborted" in the CSV header. The UI shows a big error. SD is up (USB power). */
     if (p.external_power) {
         finalize(AUTONOMY_RESULT_ABORTED);
-        export_csv();
+        export_csv(NULL);
         ESP_LOGW(TAG, "USB plugged mid-run, aborting");
         return;
     }
@@ -365,7 +393,23 @@ esp_err_t autonomy_boot_export(void)
     s_last_dump_ok    = s_run.exported != 0;
 
     if (s_run.exported) return ESP_OK;   /* already on the SD card (or a discarded abort) */
-    return export_csv();                 /* completed-by-shutdown runs land here on the next boot */
+
+    /* Pending run = the board died while it ran. Label the death with the boot verdict:
+       clean means the graceful battery-critical shutdown, anything else is the fault. */
+    const char *end;
+    switch (power_last_off_cause()) {
+    case POWER_OFF_CLEAN: end = "clean";      break;
+    case POWER_OFF_CRASH: end = "crash";      break;
+    default:              end = "power-loss"; break;
+    }
+    return export_csv(end);              /* completed-by-shutdown runs land here on the next boot */
+}
+
+esp_err_t autonomy_redump(void)
+{
+    if (s_running) return ESP_ERR_INVALID_STATE;         /* a run owns s_run; don't re-dump a partial */
+    if (s_run.magic != RUN_MAGIC) return ESP_ERR_NOT_FOUND;   /* no run loaded (none ever stored) */
+    return export_csv(NULL);   /* writes a fresh uniquely-named CSV; confirms the SD write path */
 }
 
 autonomy_result_t autonomy_get_last_result(void) { return s_last_result; }

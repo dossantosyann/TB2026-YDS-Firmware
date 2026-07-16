@@ -1,6 +1,6 @@
 /**
  * @file battery_test.h
- * @brief Battery autonomy test screen (reached with A from the Stats > Battery page).
+ * @brief Battery autonomy test screen (reached with DOWN from the Stats > Battery page).
  */
 #pragma once
 

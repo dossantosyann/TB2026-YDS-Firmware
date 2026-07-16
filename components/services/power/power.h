@@ -142,8 +142,40 @@ void power_set_shutdown_hook(power_shutdown_hook_t hook);
  *
  * Drives PIN_REG_EN low; the rail collapses within the regulator's turn-off time and
  * this never returns. If USB is still latching the regulator on, power stays up.
+ * Persists a "clean shutdown" marker in NVS just before the rail drops, so the next
+ * boot can tell an intentional off from a crash or hard power loss (the EnableReg
+ * scheme makes every reset look like ESP_RST_POWERON). @see power_last_off_cause
  */
 void power_shutdown(void) __attribute__((noreturn));
+
+/** @brief How the previous session ended, reconstructed at boot. */
+typedef enum {
+    POWER_OFF_POWER_LOSS = 0,  ///< no marker, no core dump: the rail died without warning
+                               ///< (battery connector, supervisor, brownout — or first boot)
+    POWER_OFF_CLEAN,           ///< power_shutdown() ran (user off, critical battery, autonomy end)
+    POWER_OFF_CRASH,           ///< a panic core dump was found in flash
+} power_off_cause_t;
+
+/**
+ * @brief Classify how the previous session ended (call once at boot, after NVS is up).
+ *
+ * Consumes (reads + erases) the clean-shutdown marker power_shutdown() left, and checks
+ * the coredump flash partition for a panic dump. Erasing the marker here keeps a stale
+ * flag from masking the next crash. The core dump itself is NOT erased here: the boot
+ * sequence exports it to the SD card first, then erases it (see app.c).
+ */
+void power_boot_off_check(void);
+
+/**
+ * @brief How the previous session ended. Valid after power_boot_off_check().
+ */
+power_off_cause_t power_last_off_cause(void);
+
+/** @brief Faulting task name when the cause is POWER_OFF_CRASH ("" otherwise). */
+const char *power_last_crash_task(void);
+
+/** @brief Faulting program counter when the cause is POWER_OFF_CRASH (0 otherwise). */
+uint32_t power_last_crash_pc(void);
 
 /**
  * @name Power-saving timeouts (user preferences, persisted in NVS)

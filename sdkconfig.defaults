@@ -21,6 +21,11 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
 # real softlock (audio decode, live UI render); event-driven tasks that block by design stay
 # unsubscribed. Idle-task checks (both cores) stay on: a CPU-bound spin is caught too.
 CONFIG_ESP_TASK_WDT_PANIC=y
+# Core dump to the dedicated 128K flash partition (ELF) on panic. Written by the panic
+# handler before the reset drops the self-held rail, it is the only crash witness that
+# survives a power-off; the boot sequence copies it to the SD card, then erases it
+# (see coredump_export in app.c and power_boot_off_check in power.c).
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 # Power management: DFS (esp_pm_configure 80<->160 MHz in app_init). Drivers take
 # APB/CPU locks while active, so audio is unaffected. No tickless/light sleep: it
 # would stop I2S, and the BT low-power clock needs a 32 kHz crystal we don't have.

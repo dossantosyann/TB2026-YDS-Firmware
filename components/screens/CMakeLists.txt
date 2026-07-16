@@ -5,6 +5,7 @@ idf_component_register(
         "storage/storage_screen.c"
         "stats/stats_screen.c"
         "stats/battery_test.c"
+        "stats/fuel_gauge_debug.c"
         "settings/settings_screen.c"
         "audio/playlist_browser.c"
         "audio/now_playing.c"

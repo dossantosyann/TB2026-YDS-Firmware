@@ -10,6 +10,9 @@
 #include "settings.h"
 #include "driver/gpio.h"
 #include "diag.h"
+#include "nvs.h"
+#include "esp_core_dump.h"
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -31,6 +34,19 @@ static const char *TAG = "power";
 #define USB_AUTOROUTE_TIMEOUT_MS   5000   /* give up waiting for INOKB (no valid source) */
 #define USB_CHARGER_HOLD_MS        1200
 #define USB_AUTOROUTE_POLL_MS       100
+
+/* Clean-shutdown marker. Releasing EnableReg collapses the rail, so the next boot always
+   reads ESP_RST_POWERON whether the board crashed, lost power, or shut down on purpose.
+   The only way to tell an intentional off apart afterwards is a flag persisted before
+   the rail drops; it is consumed (read + erased) once at boot. A crash leaves a core
+   dump in flash instead (written by the panic handler before the reset drops the rail),
+   giving the three-way verdict clean / crash / power-loss. */
+#define OFF_NVS_NS   "power"
+#define OFF_NVS_KEY  "clean_off"
+
+static power_off_cause_t s_off_cause;   /* zero-init = POWER_OFF_POWER_LOSS */
+static char              s_crash_task[16];
+static uint32_t          s_crash_pc;
 
 static power_state_t          s_state;          /* zero-init: valid=false until the first good read */
 static power_shutdown_hook_t  s_shutdown_hook;  /* NULL until registered */
@@ -202,10 +218,65 @@ void power_set_poweroff_ms(uint32_t ms)
     settings_set_u32(POWEROFF_MS_KEY, ms);
 }
 
+void power_boot_off_check(void)
+{
+    bool clean = false;
+    nvs_handle_t h;
+    if (nvs_open(OFF_NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, OFF_NVS_KEY, &v) == ESP_OK && v) {
+            clean = true;
+            nvs_erase_key(h, OFF_NVS_KEY);   /* consume it: a stale flag would mask the next crash */
+            nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+
+    /* A valid core dump in flash outlives the rail collapse, so it is the one reliable
+       crash witness. It cannot coexist with a fresh marker (a crash never reaches
+       power_shutdown()), so precedence is moot; check the marker first anyway. */
+    if (clean) {
+        s_off_cause = POWER_OFF_CLEAN;
+    } else if (esp_core_dump_image_check() == ESP_OK) {
+        s_off_cause = POWER_OFF_CRASH;
+        esp_core_dump_summary_t sum;
+        if (esp_core_dump_get_summary(&sum) == ESP_OK) {
+            strlcpy(s_crash_task, sum.exc_task, sizeof s_crash_task);
+            s_crash_pc = sum.exc_pc;
+        }
+        ESP_LOGW(TAG, "previous session crashed: task %s, PC 0x%08lx",
+                 s_crash_task, (unsigned long)s_crash_pc);
+    }
+}
+
+power_off_cause_t power_last_off_cause(void)
+{
+    return s_off_cause;
+}
+
+const char *power_last_crash_task(void)
+{
+    return s_crash_task;
+}
+
+uint32_t power_last_crash_pc(void)
+{
+    return s_crash_pc;
+}
+
 void power_shutdown(void)
 {
     ESP_LOGW(TAG, "shutdown: releasing EnableReg");
     if (s_shutdown_hook) s_shutdown_hook();   /* e.g. amp off -> DAC off, in the audio service's order */
+
+    /* Leave the clean-off marker last, once nothing can fail the shutdown anymore. */
+    nvs_handle_t h;
+    if (nvs_open(OFF_NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, OFF_NVS_KEY, 1);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+
     gpio_set_level(PIN_REG_EN, 0);
     /* Rail collapses within the regulator's turn-off time. If USB still latches it
        on, power stays up; nothing more we can do. */

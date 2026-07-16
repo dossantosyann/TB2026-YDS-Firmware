@@ -53,14 +53,16 @@ typedef struct {
 /**
  * @brief Start an autonomy run with the given workload.
  *
- * IDLE stops playback (silence). JACK measures whatever is already playing on the jack: the caller
- * must have a track playing on the DAC output first. The run pins that stream down for the duration
- * — it forces loop-one (so it never ends early) and a fixed 50% volume (deterministic: the physical
- * pot is bypassed) — and restores both when the run ends.
+ * IDLE stops playback (silence). JACK and BT measure whatever is already playing on the respective
+ * output: the caller must have a track playing on the DAC (JACK) or on a connected Bluetooth sink
+ * (BT) first. The run pins that stream down for the duration — it forces loop-one (so it never ends
+ * early) and a fixed pot-independent volume (JACK 50%, BT 0% — BT amplifies in the externally
+ * powered speaker, so its level does not affect this board's draw) — and restores both when the run
+ * ends.
  *
  * @param type  Workload to exercise.
- * @return ESP_OK; ESP_ERR_INVALID_STATE if a run is already in progress, or (JACK) if nothing is
- *         playing; ESP_ERR_NOT_SUPPORTED for BT (Phase D, not wired yet).
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if a run is already in progress, or if nothing is playing
+ *         (JACK/BT), or if no Bluetooth sink is connected (BT).
  */
 esp_err_t autonomy_start(autonomy_test_t type);
 
@@ -98,6 +100,18 @@ void autonomy_tick(void);
  * @return ESP_OK if a run was exported (or there was nothing to do); an esp_err_t on SD/NVS error.
  */
 esp_err_t autonomy_boot_export(void);
+
+/**
+ * @brief Re-export the last stored run to a fresh CSV on the SD card (without rebooting).
+ *
+ * Writes the run currently held in RAM (loaded at boot by autonomy_boot_export(), or the one that
+ * just ended this session) out to a new uniquely-named CSV, to confirm the SD write path. A no-op
+ * while a run is in progress.
+ *
+ * @return ESP_OK on write; ESP_ERR_INVALID_STATE if a run is in progress; ESP_ERR_NOT_FOUND if no
+ *         run is stored; otherwise the SD/NVS error from the export.
+ */
+esp_err_t autonomy_redump(void);
 
 /** @brief Outcome of the most recent run (AUTONOMY_RESULT_NONE until one happens). */
 autonomy_result_t autonomy_get_last_result(void);

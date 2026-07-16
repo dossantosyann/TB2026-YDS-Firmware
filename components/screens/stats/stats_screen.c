@@ -8,6 +8,7 @@
  */
 #include "stats_screen.h"
 #include "battery_test.h"
+#include "fuel_gauge_debug.h"
 #include "navigator.h"
 #include "status_bar.h"
 #include "gfx.h"
@@ -136,7 +137,7 @@ static void render_battery(screen_t *self)
     emitf(GFX_WHITE, "USB mux:     %s",
           power_get_usb_route() == POWER_USB_CHARGE ? "MAX77757" : "CP2102N");
 
-    gfx_draw_text(PAD_X, BATT_HINT_Y, "Press A: autonomy test", gfx_rgb(255, 120, 0), 1);
+    gfx_draw_text(PAD_X, BATT_HINT_Y, "UP: debug  DOWN: autonomy", gfx_rgb(255, 120, 0), 1);
 }
 
 static void render_storage(screen_t *self)
@@ -201,6 +202,22 @@ static void render_system(screen_t *self)
     emitf(GFX_WHITE, "Firmware: %s", esp_app_get_description()->version);
     emitf(GFX_WHITE, "IDF:      %s", esp_get_idf_version());
     emitf(GFX_WHITE, "Reset:    %s", reset_reason_str(esp_reset_reason()));
+
+    /* How the previous session ended (EnableReg makes every reset read "power-on", so
+       this comes from the boot-time marker/coredump check, not the reset reason). */
+    switch (power_last_off_cause()) {
+    case POWER_OFF_CLEAN:
+        emitf(GFX_WHITE, "Last off: clean");
+        break;
+    case POWER_OFF_CRASH:
+        emitf(gfx_rgb(255, 60, 60), "Last off: crash");
+        emitf(gfx_rgb(255, 60, 60), " %s @%08lx",
+              power_last_crash_task(), (unsigned long)power_last_crash_pc());
+        break;
+    default:
+        emitf(gfx_rgb(255, 180, 0), "Last off: power loss");
+        break;
+    }
 }
 
 /* I2C device addresses on the shared bus (hardcoded in their drivers; no central table). */
@@ -314,13 +331,15 @@ static void detail_input(screen_t *self, ui_event_t ev)
 
 static void noop(screen_t *self) { (void)self; }
 
-/* Battery page adds A (SELECT) to open the autonomy-test screen; other pages only pop. */
+/* Battery page nests two sub-screens: UP = fuel-gauge debug, DOWN = autonomy test;
+   other pages only pop. */
 static void battery_input(screen_t *self, ui_event_t ev)
 {
     (void)self;
     switch (ev) {
-    case UI_EVENT_SELECT: navigator_push(battery_test_screen()); break;
-    case UI_EVENT_BACK:   navigator_pop();                       break;
+    case UI_EVENT_UP:   navigator_push(fuel_gauge_debug_screen()); break;
+    case UI_EVENT_DOWN: navigator_push(battery_test_screen());     break;
+    case UI_EVENT_BACK: navigator_pop();                           break;
     default: break;
     }
 }
