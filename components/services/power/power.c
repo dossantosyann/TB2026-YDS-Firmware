@@ -12,6 +12,10 @@
 #include "diag.h"
 #include "nvs.h"
 #include "esp_core_dump.h"
+#include "esp_partition.h"
+#include "storage.h"
+#include "sdcard.h"
+#include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -252,6 +256,46 @@ void power_boot_off_check(void)
 power_off_cause_t power_last_off_cause(void)
 {
     return s_off_cause;
+}
+
+void power_coredump_export(void)
+{
+    size_t addr = 0, size = 0;
+    const esp_partition_t *part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, NULL);
+    if (!part || esp_core_dump_image_get(&addr, &size) != ESP_OK) {
+        return;                       /* no dump pending */
+    }
+    if (!storage_ready()) {
+        return;                       /* no SD: keep the dump for the next mount */
+    }
+
+    char path[48];
+    FILE *f = NULL;
+    for (int i = 0; i < 1000 && !f; i++) {        /* first unused name */
+        snprintf(path, sizeof path, "%s/core_%03d.bin", SDCARD_MOUNT_POINT, i);
+        f = fopen(path, "r");
+        if (f) { fclose(f); f = NULL; continue; } /* taken: try the next */
+        f = fopen(path, "w");
+        break;
+    }
+    if (f) {
+        char buf[512];
+        size_t done = 0;
+        bool ok = true;
+        while (ok && done < size) {
+            size_t n = size - done > sizeof buf ? sizeof buf : size - done;
+            ok = esp_partition_read(part, done, buf, n) == ESP_OK &&
+                 fwrite(buf, 1, n, f) == n;
+            done += n;
+        }
+        fclose(f);
+        if (ok) ESP_LOGW(TAG, "core dump saved to %s (%u bytes)", path, (unsigned)size);
+        else    ESP_LOGE(TAG, "core dump copy to %s failed", path);
+    }
+    /* Erase even if the copy failed — a correct verdict next boot beats keeping an
+       unreadable dump; a stale dump would label every later power loss as a crash. */
+    esp_core_dump_image_erase();
 }
 
 const char *power_last_crash_task(void)

@@ -41,6 +41,9 @@ static void sd_scan_task(void *arg)
     (void)arg;
     if (storage_init() == ESP_OK) {
         playlist_sync();
+        /* A crash dump left in flash because no card was inserted at boot: the card
+           is here now, export it (no-op when nothing is pending). */
+        power_coredump_export();
     }
     diag_task_exit();
     vTaskDelete(NULL);

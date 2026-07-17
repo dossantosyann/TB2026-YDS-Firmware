@@ -161,10 +161,22 @@ typedef enum {
  *
  * Consumes (reads + erases) the clean-shutdown marker power_shutdown() left, and checks
  * the coredump flash partition for a panic dump. Erasing the marker here keeps a stale
- * flag from masking the next crash. The core dump itself is NOT erased here: the boot
- * sequence exports it to the SD card first, then erases it (see app.c).
+ * flag from masking the next crash. The core dump itself is NOT erased here: it stays
+ * in flash until power_coredump_export() copies it to the SD card.
  */
 void power_boot_off_check(void);
+
+/**
+ * @brief Copy a pending panic core dump from flash to the SD card, then erase it.
+ *
+ * No-op when the coredump partition holds no valid image. When the SD card is not
+ * mounted the dump is left in flash untouched, so a later call — the next boot, or
+ * the hot-plug mount in the maintenance task — can still export it. Once the card
+ * is available the flash image is erased even if the file write failed: a stale
+ * dump would label every later power loss as a crash (see power_boot_off_check).
+ * Analyze the file with: espcoredump.py info_corefile -t raw -c core_NNN.bin <app.elf>
+ */
+void power_coredump_export(void);
 
 /**
  * @brief How the previous session ended. Valid after power_boot_off_check().
