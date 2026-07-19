@@ -9,7 +9,7 @@
 /* ----- Board / cell parameters (change these with the battery) ----- */
 #define FG_RSENSE_MOHM     5.0f   /* sense resistor, mOhm */
 #define FG_DESIGN_CAP_MAH  950    /* cell nominal capacity */
-#define FG_ICHG_TERM_MA    75     /* charger termination current (MAX77757) */
+#define FG_ICHG_TERM_MA    50     /* charger termination current: MAX77757 ITOPOFF */
 
 /* ModelGauge m5 standard LSBs scaled by Rsense (datasheet Table 2). */
 #define CAP_LSB_MAH      (5.0f / FG_RSENSE_MOHM)       /* 5.0uVh/Rsense -> mAh  (1.0 at 5mOhm)   */

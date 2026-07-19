@@ -36,7 +36,7 @@ static const char *TAG = "autonomy";
    external (separately powered) speaker, so the AVRCP level does not affect this board's draw —
    0% just keeps the speaker quiet without changing the measurement. */
 #define JACK_VOL_PCT 50
-#define BT_VOL_PCT   0
+#define BT_VOL_PCT   1
 
 /* run_t.format */
 #define FMT_NONE 0
