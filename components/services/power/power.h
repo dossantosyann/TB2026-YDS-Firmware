@@ -129,6 +129,18 @@ void power_usb_autoroute_start(void);
 void power_set_low_batt_shutdown(bool enable);
 
 /**
+ * @brief True when this SoC is at or below the graceful auto-off threshold.
+ *
+ * The threshold (near VEmpty) is decoupled from the CRITICAL red-flag band so the UI can
+ * warn the user well before the device actually powers off. Single source of truth shared
+ * by the built-in shutdown and the autonomy test, which mirror the same end condition.
+ *
+ * @param soc_pct  Reported state of charge, %.
+ * @return true if the cell is near-empty enough to power off.
+ */
+bool power_soc_at_shutdown(float soc_pct);
+
+/**
  * @brief Register a callback to run at the start of power_shutdown().
  *
  * Lets a subsystem clean up before the rail drops without power having to know the

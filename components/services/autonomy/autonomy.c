@@ -385,10 +385,10 @@ void autonomy_tick(void)
 
     /* Own the end: same condition as power.c's built-in shutdown (which we suspended). Take a
        final point, write the log, then power off (never returns). */
-    if (p.level == POWER_LEVEL_CRITICAL && !p.charging && !p.external_power) {
+    if (power_soc_at_shutdown(p.soc_pct) && !p.charging && !p.external_power) {
         add_sample(&p);
         finalize(AUTONOMY_RESULT_COMPLETED);
-        ESP_LOGW(TAG, "battery critical, ending run after %lus", (unsigned long)s_last_duration_s);
+        ESP_LOGW(TAG, "battery near-empty, ending run after %lus", (unsigned long)s_last_duration_s);
         power_shutdown();
     }
 

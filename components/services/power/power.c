@@ -26,7 +26,8 @@ static const char *TAG = "power";
 /* Battery policy. SoC comes from the MAX17260 ModelGauge m5, so it is already
    cell-aware; the bands are plain percentages. */
 #define LOW_SOC_PCT        15.0f
-#define CRITICAL_SOC_PCT    5.0f
+#define CRITICAL_SOC_PCT    5.0f   /* red flag in the UI; the user's advance warning */
+#define SHUTDOWN_SOC_PCT    1.0f   /* graceful auto-off, decoupled so the red flag warns first */
 #define CHARGE_CURRENT_MA  10.0f   /* current into the cell above this = charging */
 
 /* USB mux hand-off: charger detects the source, then the console takes the lines. This is the
@@ -115,14 +116,21 @@ void power_tick(void)
     else if (d.soc_pct <= LOW_SOC_PCT)   s_state.level = POWER_LEVEL_LOW;
     else                                 s_state.level = POWER_LEVEL_NORMAL;
 
-    /* Graceful auto-off: only on a real battery that is critically low and not being
-       fed. The external-power gate keeps the device alive on USB / the bench. Suspended
-       while an autonomy test runs, which owns the shutdown so it can write its log first. */
+    /* Graceful auto-off: only on a real battery that is near-empty (SoC < SHUTDOWN_SOC_PCT,
+       i.e. the cell has reached ~VEmpty) and not being fed. The red CRITICAL flag warns the
+       user earlier; the device only powers off here. The external-power gate keeps it alive
+       on USB / the bench. Suspended while an autonomy test runs, which owns the shutdown so it
+       can write its log first. */
     if (s_low_batt_shutdown &&
-        s_state.level == POWER_LEVEL_CRITICAL && !s_state.charging && !s_state.external_power) {
-        ESP_LOGW(TAG, "battery critical (%.0f%%), shutting down", d.soc_pct);
+        power_soc_at_shutdown(d.soc_pct) && !s_state.charging && !s_state.external_power) {
+        ESP_LOGW(TAG, "battery near-empty (%.0f%%), shutting down", d.soc_pct);
         power_shutdown();
     }
+}
+
+bool power_soc_at_shutdown(float soc_pct)
+{
+    return soc_pct <= SHUTDOWN_SOC_PCT;
 }
 
 void power_get_state(power_state_t *out)
