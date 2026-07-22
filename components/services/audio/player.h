@@ -146,4 +146,12 @@ esp_err_t player_prev(void);
  */
 esp_err_t player_get_state(player_status_t *out);
 
+/**
+ * @brief Persist the current track (path + position) so Now Playing re-selects it after boot.
+ *
+ * Call before any power-off. Writes "last_path"/"last_pos" to @ref services_settings when a
+ * track is loaded (playing or paused); a no-op when stopped (the previous value is kept).
+ */
+void player_save_resume(void);
+
 /** @} */

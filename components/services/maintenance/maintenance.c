@@ -11,7 +11,6 @@
 #include "storage.h"
 #include "sdcard.h"
 #include "input.h"
-#include "settings.h"
 #include "autonomy.h"
 #include "diag.h"
 #include "esp_log.h"
@@ -110,12 +109,7 @@ static void power_off_watch(void)
     if (st.state == PLAYER_PLAYING) return;
 
     ESP_LOGW(TAG, "idle with no playback, powering off");
-    if (st.state == PLAYER_PAUSED) {
-        /* Resume info for a future boot: the path survives an SD re-scan, an index
-           wouldn't. Restoring it at boot is not wired yet. */
-        settings_set_str("last_path", st.track.path);
-        settings_set_u32("last_pos", st.elapsed_ms);
-    }
+    player_save_resume();   /* re-select this track in Now Playing at the next boot (app.c) */
     player_stop();
     /* pipeline_stop is queued to the audio task: give it time to process the
        command and close its file before the volume goes away (same as sd_watch). */

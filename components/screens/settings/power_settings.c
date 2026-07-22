@@ -21,6 +21,7 @@
 #include "status_bar.h"
 #include "gfx.h"
 #include "power.h"
+#include "player.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -160,7 +161,10 @@ static void popup_input(ui_event_t ev)
     case UI_EVENT_LEFT:
     case UI_EVENT_RIGHT:  s_confirm_sel ^= 1; break;
     case UI_EVENT_SELECT:
-        if (s_confirm_sel == 0) power_shutdown();   /* never returns */
+        if (s_confirm_sel == 0) {
+            player_save_resume();        /* re-select this track in Now Playing at the next boot */
+            power_shutdown();            /* never returns */
+        }
         s_popup = false;
         break;
     case UI_EVENT_BACK:   s_popup = false; break;

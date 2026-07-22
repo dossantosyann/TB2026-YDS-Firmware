@@ -9,6 +9,7 @@
 #include "sink_i2s_dac.h"
 #include "sink_bluetooth.h"
 #include "bluetooth.h"
+#include "settings.h"
 #include "esp_log.h"
 
 static const char *TAG = "player";
@@ -259,4 +260,16 @@ esp_err_t player_get_state(player_status_t *out)
     pipeline_get_position(&out->elapsed_ms, &out->total_ms);
     out->track_unsupported = s_unsupported;
     return ESP_OK;
+}
+
+void player_save_resume(void)
+{
+    /* Persist the current track so Now Playing re-selects it after any power-off (app.c reads
+       "last_path" at boot). Save on both playing and paused -- only STOPPED has no track, and
+       there we leave the previous value untouched. "last_pos" is stored for a future mid-track
+       resume; playback restarts at 0:00 until the decoder gains seek support. */
+    player_status_t st;
+    if (player_get_state(&st) != ESP_OK || st.state == PLAYER_STOPPED) return;
+    settings_set_str("last_path", st.track.path);
+    settings_set_u32("last_pos", st.elapsed_ms);
 }
