@@ -14,6 +14,8 @@
 #include "track_meta.h"
 #include "esp_timer.h"
 #include "esp_app_desc.h"
+#include "esp_system.h"          /* esp_get_minimum_free_heap_size */
+#include "esp_private/esp_clk.h" /* esp_clk_cpu_freq */
 #include "esp_log.h"
 #include "nvs.h"
 #include <stddef.h>
@@ -27,7 +29,7 @@ static const char *TAG = "autonomy";
 #define NVS_KEY_RUN  "run"
 #define NVS_KEY_SEQ  "seq"          /* monotonic run counter, for unique CSV file names */
 #define RUN_MAGIC    0xA5D50001u
-#define RUN_VERSION  3              /* v3 added the firmware version (v2: workload header) */
+#define RUN_VERSION  4              /* v4 added per-sample BT flag + min-heap, and run-start SD/CPU freq (v3: firmware version; v2: workload header) */
 #define MAX_SAMPLES  256            /* blob stays ~2.5 KB — the NVS partition is only 24 KB */
 #define SAMPLE_S_0   60             /* initial seconds between samples ("every minute") */
 
@@ -51,6 +53,8 @@ typedef struct __attribute__((packed)) {
     int16_t  mv;        /* cell voltage, mV */
     int16_t  soc_x10;   /* state of charge, % * 10 */
     int16_t  ma;        /* current, mA (negative = discharge) */
+    uint8_t  bt;        /* Bluetooth radio powered at this sample (1) or off (0) */
+    uint16_t heap_kb;   /* minimum free heap ever, KiB (watermark: a fall reveals a leak) */
 } sample_t;
 
 /* The whole run, header + curve, persisted as one NVS blob (only count samples are written). */
@@ -69,6 +73,9 @@ typedef struct __attribute__((packed)) {
     char     file[FILE_MAX];/* looped track display name, empty when idle */
     char     fw[32];        /* app version at run start (esp_app_desc), NOT at export: a reflash
                                between the run's death and the boot export must not relabel it */
+    int32_t  sd_freq_khz;   /* negotiated SD SPI clock at run start, kHz (0 if no card) -- captured
+                               at start, like fw: the boot export runs on a later boot */
+    uint16_t cpu_freq_mhz;  /* CPU frequency at run start, MHz (same capture-at-start reason) */
     sample_t samples[MAX_SAMPLES];
 } run_t;
 
@@ -141,6 +148,15 @@ static size_t blob_len(void)
    would miss the dominant RF+SBC cost. */
 static esp_err_t workload_start(autonomy_test_t type)
 {
+    /* JACK and IDLE measure this board's own draw, so the radio must be off: a lingering BT
+       session (connected then exited, or a link that never auto-shut-down) would otherwise
+       inflate the reading -- the bug that made two "identical" jack runs differ ~2x. BT keeps
+       the radio up (it is the output). */
+    if (type != AUTONOMY_TEST_BT && bluetooth_is_powered()) {
+        bluetooth_disconnect();   /* drop any link; the deferred auto-shutdown then powers it down */
+        bluetooth_shutdown();     /* power down now if it was on but idle (shutdown refuses under a link) */
+    }
+
     if (type == AUTONOMY_TEST_IDLE) {
         player_stop();                       /* IDLE = silence */
         return ESP_OK;
@@ -220,6 +236,8 @@ static void add_sample(const power_state_t *p)
     s->mv      = (int16_t)(p->voltage_v * 1000.0f);
     s->soc_x10 = (int16_t)(p->soc_pct * 10.0f);
     s->ma      = (int16_t)p->current_ma;
+    s->bt      = bluetooth_is_powered() ? 1 : 0;
+    s->heap_kb = (uint16_t)(esp_get_minimum_free_heap_size() / 1024);
     persist();
 }
 
@@ -270,12 +288,15 @@ static esp_err_t export_csv(const char *end_cause)
     fprintf(f, "# format,%s\n",          format_name(s_run.format));
     fprintf(f, "# rate_hz,%u\n",         (unsigned)s_run.rate_hz);
     fprintf(f, "# volume,%u\n",          s_run.volume);
+    fprintf(f, "# sd_freq_khz,%d\n",     (int)s_run.sd_freq_khz);
+    fprintf(f, "# cpu_freq_mhz,%u\n",    s_run.cpu_freq_mhz);
     fprintf(f, "# duration_s,%u\n",      (unsigned)duration_s());
     if (end_cause) fprintf(f, "# end,%s\n", end_cause);
-    fprintf(f, "t_s,voltage_mV,soc_pct,current_mA\n");
+    fprintf(f, "t_s,voltage_mV,soc_pct,current_mA,bt,heap_min_kb\n");
     for (uint16_t i = 0; i < s_run.count; i++) {
         const sample_t *s = &s_run.samples[i];
-        fprintf(f, "%u,%d,%.1f,%d\n", (unsigned)s->t_s, s->mv, s->soc_x10 / 10.0f, s->ma);
+        fprintf(f, "%u,%d,%.1f,%d,%u,%u\n",
+                (unsigned)s->t_s, s->mv, s->soc_x10 / 10.0f, s->ma, s->bt, s->heap_kb);
     }
     fclose(f);
 
@@ -306,6 +327,8 @@ esp_err_t autonomy_start(autonomy_test_t type)
     s_run.interval_s    = SAMPLE_S_0;
     s_run.start_soc_x10 = (int16_t)(p.soc_pct * 10.0f);
     strncpy(s_run.fw, esp_app_get_description()->version, sizeof s_run.fw - 1);
+    s_run.sd_freq_khz  = sdcard_freq_khz();
+    s_run.cpu_freq_mhz = (uint16_t)(esp_clk_cpu_freq() / 1000000);
 
     esp_err_t err = workload_start(type);
     if (err != ESP_OK) {                  /* e.g. nothing playing for JACK: don't start a bogus run */
