@@ -90,15 +90,24 @@ static void power_off_watch(void)
     if (autonomy_is_running()) return;            /* a test runs until battery shutdown, not idle */
     uint32_t off_ms = power_get_poweroff_ms();
     if (off_ms == 0) return;                      /* auto power-off disabled */
+
+    /* USB latches the regulator (releasing EnableReg couldn't cut the rail), and the idle
+       countdown only makes sense on battery. Keep the unplug reference at "now" while external
+       power is present, so the auto-off wait restarts the moment USB is removed rather than
+       firing immediately on an idle stretch built up during charging. */
+    static TickType_t s_unplug_tick;
+    power_state_t pw;
+    power_get_state(&pw);
+    if (pw.external_power) {
+        s_unplug_tick = xTaskGetTickCount();
+        return;
+    }
     if (input_idle_ms() < off_ms) return;
+    if ((xTaskGetTickCount() - s_unplug_tick) < pdMS_TO_TICKS(off_ms)) return;
 
     player_status_t st;
     player_get_state(&st);
     if (st.state == PLAYER_PLAYING) return;
-
-    power_state_t pw;
-    power_get_state(&pw);
-    if (pw.external_power) return;   /* USB latches the regulator: can't power off */
 
     ESP_LOGW(TAG, "idle with no playback, powering off");
     if (st.state == PLAYER_PAUSED) {
