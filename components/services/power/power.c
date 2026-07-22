@@ -132,7 +132,7 @@ void power_get_state(power_state_t *out)
 
 void power_set_usb_route(power_usb_route_t route)
 {
-    /* PIN_USB_DIR drives the TC7USB40MU select: HIGH = MAX77757 charger, LOW = CP2102N. */
+    /* PIN_USB_DIR drives the PI3USB221AZUAEX select: HIGH = MAX77757 charger, LOW = CP2102N. */
     gpio_set_level(PIN_USB_DIR, route == POWER_USB_CHARGE ? 1 : 0);
     gpio_set_direction(PIN_USB_DIR, GPIO_MODE_OUTPUT);
     s_usb_route = route;

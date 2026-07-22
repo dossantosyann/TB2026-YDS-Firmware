@@ -127,7 +127,7 @@ static void render_battery(screen_t *self)
 
     /* USB hand-off, read live (the cached snapshot only refreshes every 2 s, too coarse to catch
        the mux swing). INOKB is the charger's open-drain valid-input flag, low = source at CHGIN;
-       the mux line names the chip the TC7USB40MU currently gives D+/D- to. On a plug this page
+       the mux line names the chip the PI3USB221AZUAEX currently gives D+/D- to. On a plug this page
        shows MAX77757 for the detection window, then CP2102N — that is the hand-off working. */
     bool inokb;
     if (gpio_expander_get(EXP_INOKB, &inokb) == ESP_OK)

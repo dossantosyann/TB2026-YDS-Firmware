@@ -97,7 +97,7 @@ void app_init(void)
     ESP_ERROR_CHECK(i2c_bus_init(&s_i2c));
     ESP_ERROR_CHECK(gpio_expander_init(s_i2c));
 
-    /* USB-C mux hand-off (TC7USB40MU): the charger gets the data lines first for its
+    /* USB-C mux hand-off (PI3USB221AZUAEX): the charger gets the data lines first for its
        source detection, then a short-lived task hands them to the console once INOKB
        asserts. Must follow gpio_expander_init() -- the task reads INOKB off it. */
     power_usb_autoroute_start();

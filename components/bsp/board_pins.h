@@ -55,7 +55,7 @@
 /** @name Control outputs */
 ///@{
 #define PIN_REG_EN       (4)   ///< EnableReg
-#define PIN_USB_DIR      (22)  ///< TC7USB40MU USB mux select
+#define PIN_USB_DIR      (22)  ///< PI3USB221AZUAEX USB mux select
 ///@}
 
 /** @name GPIO expander channels (PI4IOE5V9554A on I2C 0x38) — IO0..IO7 bit positions.

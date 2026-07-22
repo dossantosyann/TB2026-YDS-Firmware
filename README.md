@@ -7,7 +7,7 @@ developed as a Bachelor thesis project (TB 2026). Written in C on ESP-IDF / Free
 
 | Domain   | Parts |
 |----------|-------|
-| **MCU**  | ESP32-WROVER-E (PSRAM), flashed via CP2102N (auto-flash). USB-C routed by a TC7USB40MU mux to either CP2102N or charger |
+| **MCU**  | ESP32-WROVER-E (PSRAM), flashed via CP2102N (auto-flash). USB-C routed by a PI3USB221AZUAEX mux to either CP2102N or charger |
 | **Audio**| Differential chain PCM5242 (I²S) → RC filter → MAX97220 → 3.5 mm jack. Bluetooth A2DP output (AVRCP volume) |
 
 > **Sample rates:** the PCM5242 derives its PLL from BCK (= 64·fS, SCK grounded). The PLL

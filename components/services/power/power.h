@@ -9,7 +9,7 @@
  *     current) plus a derived charge/level state for the UI.
  *   - low-battery policy: a graceful auto-shutdown when the cell is critically low
  *     and not being fed.
- *   - USB-C data/charge mux routing (TC7USB40MU via PIN_USB_DIR).
+ *   - USB-C data/charge mux routing (PI3USB221AZUAEX via PIN_USB_DIR).
  *
  * This service owns no long-lived task: the maintenance task calls power_tick() periodically
  * (see services/maintenance), and the only task it ever spawns is the short-lived USB mux
@@ -36,7 +36,7 @@ typedef enum {
     POWER_LEVEL_CRITICAL,    ///< at or below the critical threshold (graceful shutdown)
 } power_level_t;
 
-/** @brief USB-C mux routing through the TC7USB40MU (PIN_USB_DIR). */
+/** @brief USB-C mux routing through the PI3USB221AZUAEX (PIN_USB_DIR). */
 typedef enum {
     POWER_USB_DATA = 0,  ///< LOW: route D+/D- to the CP2102N (console / flash)
     POWER_USB_CHARGE,    ///< HIGH: route to the MAX77757 charger (USB source current detection)
