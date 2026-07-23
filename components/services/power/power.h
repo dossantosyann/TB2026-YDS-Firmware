@@ -15,6 +15,10 @@
  * (see services/maintenance), and the only task it ever spawns is the short-lived USB mux
  * hand-off, which self-deletes. The fuel gauge and GPIO expander drivers must already be
  * initialised before power_tick() runs.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

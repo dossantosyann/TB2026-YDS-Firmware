@@ -2,6 +2,10 @@
  * @file track_meta.c
  * @brief Tags + format reader (see track_meta.h): MP3 ID3v2/ID3v1, WAV header, no playback.
  * @ingroup services_audio_track_meta
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "track_meta.h"
 #include "mp3_frame.h"

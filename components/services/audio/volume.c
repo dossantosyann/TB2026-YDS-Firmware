@@ -2,6 +2,10 @@
  * @file volume.c
  * @brief Volume service: pot -> active output (DAC byte or Bluetooth AVRCP), deadband write.
  * @ingroup services_audio_volume
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "volume.h"
 #include "adc.h"

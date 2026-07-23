@@ -13,6 +13,10 @@
  * stereo (mono sources are up-mixed L=R), so the wired sink's fixed stereo slots stay full.
  *
  * One stream at a time: decoder_open() while a stream is already open returns an error.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

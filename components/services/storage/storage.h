@@ -12,6 +12,10 @@
  * (case-insensitive) so next/prev is deterministic. Each entry is a full POSIX path ready to
  * hand to decoder_open(); the display name is the part after the last '/'. No metadata, no
  * persistent cache: just the flat index.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

@@ -1,3 +1,10 @@
+/**
+ * @file sink_i2s_dac.c
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
+ */
 #include "audio_sink.h"
 #include "audio_dac.h"
 #include "sink_i2s_dac.h"

@@ -2,6 +2,10 @@
  * @file input.c
  * @brief Input service: ISR-notified task reads buttons over I2C/GPIO, debounces, queues events.
  * @ingroup services_input
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "input.h"
 #include "input_logic.h"

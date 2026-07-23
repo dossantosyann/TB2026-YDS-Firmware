@@ -3,6 +3,10 @@
  * @brief Audio pipeline task: producer->consumer loop from a PCM source to a selectable sink
  *        (wired DAC or Bluetooth).
  * @ingroup services_audio_pipeline
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "pipeline.h"
 #include "audio_sink.h"

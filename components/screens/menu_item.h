@@ -1,6 +1,10 @@
 /**
  * @file menu_item.h
  * @brief One entry in a menu_screen: a label plus a navigation target or action.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

@@ -2,6 +2,10 @@
  * @file input_logic.c
  * @brief Pure debounce + press-edge detection + button->ui_event mapping (no hardware).
  * @ingroup services_input_logic
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "input_logic.h"
 #include "board_pins.h"

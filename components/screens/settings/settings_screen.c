@@ -6,6 +6,10 @@
  * ">" caret marks the selected row (no full white bar, which on this passive OLED lights
  * OFF pixels across the line; see root_menu's note). The sub-screen pointers aren't
  * compile-time constants, so they are seeded on first use.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "settings_screen.h"
 #include "bluetooth_settings.h"

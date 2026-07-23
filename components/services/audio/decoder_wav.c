@@ -5,6 +5,10 @@
  * Every sample is expanded to the 32-bit MSB-justified word the ESP32 I2S peripheral
  * expects: int16 shifted into the high 16 bits, WAV's packed 3-byte little-endian 24-bit
  * samples into the high 24 bits (low byte 0). Mono is up-mixed to stereo.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "decoder_backend.h"
 #include "esp_log.h"

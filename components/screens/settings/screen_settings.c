@@ -16,6 +16,10 @@
  * would be unreadable, leaving the user unable to see the slider to raise it back. The
  * sleep delay is persisted through the power service on BACK, only if it actually moved
  * (Rule 13: no NVS write per scroll step).
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "screen_settings.h"
 #include "navigator.h"

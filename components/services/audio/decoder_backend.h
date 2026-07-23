@@ -5,6 +5,10 @@
  * Not a public header: only decoder.c and the per-format backends include it. The facade
  * owns the FILE* (it opens it, sniffs the format, and closes it); a backend keeps its own
  * decoder state and reads PCM from the file handed to open().
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

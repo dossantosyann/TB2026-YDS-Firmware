@@ -1,3 +1,10 @@
+/**
+ * @file now_playing.c
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
+ */
 #include "now_playing.h"
 #include "playlist_browser.h"
 #include "output_select.h"

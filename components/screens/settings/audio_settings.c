@@ -11,6 +11,10 @@
  * The slider drives the DAC L/R trim live (volume_set_balance) for immediate feedback; the value
  * is persisted to NVS once, on screen exit (volume_save_balance), and restored by volume_init at
  * boot -- so a still slider costs no flash writes.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "audio_settings.h"
 #include "bluetooth_settings.h"

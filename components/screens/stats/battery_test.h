@@ -1,6 +1,10 @@
 /**
  * @file battery_test.h
  * @brief Battery autonomy test screen (reached with DOWN from the Stats > Battery page).
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

@@ -15,6 +15,10 @@
  * State is static and minimal (one position, two mode flags, one permutation table); no
  * allocation happens per call. Call @ref playlist_sync once after storage_init/storage_rescan
  * to (re)bind to the current index before navigating.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

@@ -2,6 +2,10 @@
  * @file screen.h
  * @brief Screen interface contract: the vtable every screen implements.
  *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
+ *
  * @defgroup ui User Interface
  * @brief Framebuffer rendering, the screen interface, navigation and input events.
  */

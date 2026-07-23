@@ -1,6 +1,10 @@
 /**
  * @file gfx.h
  * @brief Framebuffer drawing primitives for the 176x176 RGB565 OLED.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

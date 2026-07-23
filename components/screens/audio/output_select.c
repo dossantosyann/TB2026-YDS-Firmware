@@ -11,6 +11,10 @@
  * A Bluetooth switch is refused only when no speaker is connected (the row is dimmed); an
  * un-acked speaker volume does not refuse it — the player defers the stream until the ack
  * (never blast) and the switch call still succeeds.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "output_select.h"
 #include "bluetooth_settings.h"

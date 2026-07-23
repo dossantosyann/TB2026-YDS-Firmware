@@ -50,3 +50,11 @@ doxygen Doxyfile        # output in html/index.html
 
 Browse the **Topics** tab for the logical module tree (e.g. *Board Support Package*),
 or the **Files** tab for the per-file view and the GPIO pin map.
+
+## AI assistance
+
+Most of this firmware's source was developed with the assistance of **Claude Opus 4.8**
+(Anthropic), under the author's direction: specification, review, and on-target validation
+were carried out by Y. Dos Santos. Every source file under `components/` and `main/` carries
+a Doxygen `@note` recording this, and each AI-assisted commit is co-signed
+`Co-Authored-By: Claude Opus`, so the full contribution history is traceable via `git log`.

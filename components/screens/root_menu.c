@@ -1,3 +1,10 @@
+/**
+ * @file root_menu.c
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
+ */
 #include "root_menu.h"
 #include "now_playing.h"
 #include "storage_screen.h"

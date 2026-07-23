@@ -3,6 +3,10 @@
  * @brief Maintenance task: periodically runs background chores (volume/player polls,
  *        power_tick, autonomy_tick, SD hot-plug watch, idle auto power-off, diag).
  * @ingroup services_maintenance
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "maintenance.h"
 #include "power.h"

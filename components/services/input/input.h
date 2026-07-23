@@ -12,6 +12,10 @@
  * Wake provisioning: A (GPIO39) is an RTC-IO and is the intended deep-sleep wake source. This
  * service only configures the pin wake-compatibly and exposes @ref INPUT_WAKE_GPIO /
  * @ref INPUT_WAKE_ACTIVE_LEVEL; it never calls esp_sleep_* — arming is the future sleep service's job.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

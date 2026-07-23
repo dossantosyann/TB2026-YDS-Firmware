@@ -11,6 +11,10 @@
  *
  * The duration field matches the playing decoder exactly (same Xing/Info/VBRI logic): 0 means
  * unknown (e.g. a headerless VBR MP3), never a guess.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

@@ -5,6 +5,10 @@
  * Detection is by extension (.mp3 / .wav), confirmed against the file's magic bytes; if the
  * two disagree the magic wins. Callers see only the concrete decoder.h API and never learn
  * which backend is active.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "decoder.h"
 #include "decoder_backend.h"

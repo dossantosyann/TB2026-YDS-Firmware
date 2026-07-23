@@ -1,3 +1,10 @@
+/**
+ * @file status_bar.c
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
+ */
 // Permanent battery readout overlaid on every screen (see navigator_tick).
 
 #include "status_bar.h"

@@ -6,6 +6,10 @@
  * PLL and clock dividers off BCK by hand (see audio_dac_set_sample_rate()). It otherwise
  * only handles the I2C control port at address 0x4C. Mute also depends on the XSMT pin
  * on the GPIO expander, which this driver does not touch.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

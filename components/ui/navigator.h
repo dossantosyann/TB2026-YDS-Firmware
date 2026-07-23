@@ -1,6 +1,10 @@
 /**
  * @file navigator.h
  * @brief Screen-stack router: push/pop screens and dispatch input to the top one.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

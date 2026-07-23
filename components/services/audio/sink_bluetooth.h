@@ -6,6 +6,10 @@
  * PCM from the Bluetooth stack's own task. write() feeds an internal ring buffer; a pull
  * callback drains it and the stack encodes SBC and paces the link. Requires the
  * @ref services_bluetooth service to have an established connection.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

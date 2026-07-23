@@ -15,6 +15,10 @@
  * rail (power_shutdown() never returns). The rail is also latched on by USB, so shutting
  * down while USB is connected would spin power_shutdown() forever -- when USB is present
  * the popup shows a warning and refuses instead of walking into that dead end.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "power_settings.h"
 #include "navigator.h"

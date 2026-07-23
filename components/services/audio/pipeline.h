@@ -12,6 +12,10 @@
  *
  * Commands are posted from any task and serviced by the audio task; the public calls below
  * never block on the audio path.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

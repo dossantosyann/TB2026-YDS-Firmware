@@ -4,6 +4,10 @@
  *
  * EN (FlashEN), IO0 (FlashIO0), U0RXD/U0TXD: CP2102N auto-flash + console,
  * not firmware-controlled.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

@@ -6,6 +6,10 @@
  * results with signal strength. Connect from either list; a popup on a paired device offers
  * Connect/Disconnect and Forget. The radio is kept off by default and only powered while scanning
  * or connected.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

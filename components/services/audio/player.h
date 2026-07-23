@@ -13,6 +13,10 @@
  * Threading: call the player_* API from one control task (the UI/maintenance task). The only
  * exception is the internal end-of-track callback, which runs in the audio task and merely
  * advances; do not call the API from interrupt context.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

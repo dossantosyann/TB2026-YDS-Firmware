@@ -2,6 +2,10 @@
  * @file display_oled.h
  * @brief SSD1333 OLED driver (NHD-1.91-176176UBC3, 176x176, 4-wire SPI).
  *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
+ *
  * @defgroup drivers Drivers
  * @brief Chip-level drivers built on top of the bsp buses.
  */

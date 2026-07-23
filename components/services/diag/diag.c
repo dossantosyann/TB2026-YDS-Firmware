@@ -3,6 +3,10 @@
  * @brief Diagnostics report: stack occupancy of the registered tasks, FreeRTOS task list
  *        and run-time stats, internal/PSRAM heap usage.
  * @ingroup services_diag
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "diag.h"
 

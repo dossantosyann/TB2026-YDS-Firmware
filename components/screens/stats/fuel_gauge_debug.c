@@ -8,6 +8,10 @@
  * a value well above design is the corrupted-learning symptom this page exists to catch.
  * A (behind a confirmation popup) re-runs the EZ model load to purge that state — the
  * cycle counter is preserved, health restarts at 100% by design.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "fuel_gauge_debug.h"
 #include "navigator.h"

@@ -1,3 +1,10 @@
+/**
+ * @file icons.c
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
+ */
 #include <stdint.h>
 
 /* music.png: 32x32, 1 bpp, MSB-first, stride 4 bytes/row. */

@@ -9,6 +9,10 @@
  * Like the GPIO expander, this driver owns no interrupt and no event queue: card
  * presence is read synchronously via sdcard_present(). Hot-plug handling (an ISR on
  * PIN_SD_DETECT that mounts/unmounts) belongs to the consumer, not here.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

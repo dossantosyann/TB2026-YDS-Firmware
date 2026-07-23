@@ -12,6 +12,10 @@
  *               Both setup rows are always drawn (dim when the mode doesn't use them).
  *   - Start   : arm the run (enabled from a full cell off external power, with a live Jack/BT stream).
  *   - Re-dump : re-export the last run's CSV to the SD card (enabled with a stored run + mounted card).
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "battery_test.h"
 #include "storage_screen.h"

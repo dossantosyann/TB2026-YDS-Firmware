@@ -4,6 +4,10 @@
  *
  * Channels are the EXP_* bit positions in board_pins.h. IO0/IO1 are outputs
  * (DAC mute, amp shutdown), IO2..IO7 are inputs (buttons, charger INOKB).
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

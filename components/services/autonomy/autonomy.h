@@ -13,6 +13,10 @@
  * shutdown — graceful or a crash. On the next boot autonomy_boot_export() writes it out as a CSV
  * on the SD card. The NVS partition here is only 24 KB, hence the bound rather than a full-detail
  * curve.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

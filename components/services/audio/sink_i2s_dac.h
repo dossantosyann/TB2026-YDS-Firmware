@@ -5,6 +5,10 @@
  * Both lines are GPIO-expander pins, not chip data interfaces, so this routing lives in
  * the audio service rather than in the drivers: the DAC driver stays I2C-only and the amp
  * has no driver of its own. Power sequencing between the two is this service's concern.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #pragma once
 

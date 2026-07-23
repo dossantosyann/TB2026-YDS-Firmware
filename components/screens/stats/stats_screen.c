@@ -5,6 +5,10 @@
  * The menu reuses no generic widget (it offsets content below the status bar, which the
  * generic menu_screen does not). Each detail page sets screen_t::refresh_ms so the UI
  * task re-renders it every DETAIL_REFRESH_MS for live values; the menu itself stays event-driven.
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "stats_screen.h"
 #include "battery_test.h"

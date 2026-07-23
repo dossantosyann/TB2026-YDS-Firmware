@@ -12,6 +12,10 @@
  * The SUSPEND/CHECK_SRC_RDY/START media commands are asynchronous and unserialised in the
  * stack; issuing a pair of them per skip both added ~1 s of latency and could interleave so
  * the session ended up suspended while the player believed it was playing (silent tracks).
+ *
+ * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
+ *       direction de Y. Dos Santos : spécification, revue et validation sur
+ *       cible par l'auteur.
  */
 #include "sink_bluetooth.h"
 #include "bluetooth.h"
