@@ -3,8 +3,9 @@
  * @brief Maintenance service: low-priority background task for periodic chores.
  *
  * Owns a single shared housekeeping task that runs slow periodic work off the
- * critical paths. Currently its only tenant is the power service (power_tick);
- * future chores (e.g. SD housekeeping) get added to the same loop.
+ * critical paths. Tenants: volume and player polling, the power service
+ * (power_tick + idle auto power-off), the autonomy test, the SD hot-plug watch
+ * and the diag dump.
  */
 #pragma once
 

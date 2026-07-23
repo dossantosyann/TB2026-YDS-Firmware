@@ -25,9 +25,10 @@ static const char *TAG = "pipeline";
 #define PIPE_FS            44100
 #define PIPE_CHUNK_FRAMES  512          /* PCM frames handed to sink->write() per iteration */
 #define TONE_AMPLITUDE     10000        /* ~ -10 dBFS, safe on headphones */
-#define TONE_VOLUME        0x68         /* placeholder DAC volume byte (~ -20 dB) until the
-                                           volume service lands; equal L/R (the analog L/R
-                                           imbalance is a hardware matter, not firmware's). */
+#define TONE_VOLUME        0x68         /* fixed DAC volume byte (~ -20 dB) for the tone test
+                                           only — file playback volume is the volume service's
+                                           job; equal L/R (the analog L/R imbalance is a
+                                           hardware matter, not firmware's). */
 
 #define PIPE_TASK_PRIO     22           /* above UI/maintenance, below IDF system tasks */
 #define PIPE_TASK_CORE     1            /* APP_CPU: keep the audio loop off core 0 (Wi-Fi/BT) */

@@ -4,12 +4,12 @@
  *
  * Drives a characterisation run: the user charges to 100%, picks a workload, and the board runs
  * on battery until it shuts itself off, logging a discharge curve so the autonomy can be read
- * back from an SD CSV on the next boot. The service owns the run state and (later) the logging;
+ * back from an SD CSV on the next boot. The service owns the run state and the logging;
  * the in-progress UI is a screensaver-like mode in the UI task, and the maintenance task drives
  * autonomy_tick().
  *
  * Storage: the discharge curve accumulates in RAM and is rewritten to a single NVS blob on every
- * sample (bounded to AUTONOMY_MAX_SAMPLES by halving the rate when full), so the run survives any
+ * sample (bounded to a fixed sample count by halving the rate when full), so the run survives any
  * shutdown — graceful or a crash. On the next boot autonomy_boot_export() writes it out as a CSV
  * on the SD card. The NVS partition here is only 24 KB, hence the bound rather than a full-detail
  * curve.
@@ -56,9 +56,9 @@ typedef struct {
  * IDLE stops playback (silence). JACK and BT measure whatever is already playing on the respective
  * output: the caller must have a track playing on the DAC (JACK) or on a connected Bluetooth sink
  * (BT) first. The run pins that stream down for the duration — it forces loop-one (so it never ends
- * early) and a fixed pot-independent volume (JACK 50%, BT 0% — BT amplifies in the externally
- * powered speaker, so its level does not affect this board's draw) — and restores both when the run
- * ends.
+ * early) and a fixed pot-independent volume (JACK 50%, BT a near-silent 1% — BT amplifies in the
+ * externally powered speaker, so its level does not affect this board's draw) — and restores both
+ * when the run ends.
  *
  * @param type  Workload to exercise.
  * @return ESP_OK; ESP_ERR_INVALID_STATE if a run is already in progress, or if nothing is playing
@@ -84,8 +84,9 @@ void autonomy_get_status(autonomy_status_t *out);
  * @brief Periodic hook, called from the maintenance task (after power_tick()).
  *
  * Samples the discharge curve at the current interval and persists it. While a run is in
- * progress it also owns the end: on POWER_LEVEL_CRITICAL (on battery, not charging) it writes
- * the final log and calls power_shutdown(). No-op when no run is in progress.
+ * progress it also owns the end: once the cell is near-empty (power_soc_at_shutdown(), on
+ * battery, not charging) it writes the final log and calls power_shutdown(). No-op when no
+ * run is in progress.
  */
 void autonomy_tick(void);
 

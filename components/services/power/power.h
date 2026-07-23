@@ -33,7 +33,8 @@
 typedef enum {
     POWER_LEVEL_NORMAL = 0,  ///< above the low threshold
     POWER_LEVEL_LOW,         ///< at or below the low threshold (warn the user)
-    POWER_LEVEL_CRITICAL,    ///< at or below the critical threshold (graceful shutdown)
+    POWER_LEVEL_CRITICAL,    ///< at or below the critical threshold (red warning; the graceful
+                             ///< shutdown fires lower, see power_soc_at_shutdown())
 } power_level_t;
 
 /** @brief USB-C mux routing through the PI3USB221AZUAEX (PIN_USB_DIR). */
@@ -71,7 +72,8 @@ void power_self_hold(void);
  * @brief Refresh the cached battery state and apply the low-battery policy.
  *
  * Reads the fuel gauge and the INOKB input, updates the snapshot, and — if the cell
- * is critically low while discharging on battery — calls power_shutdown(). A failed
+ * is near-empty (power_soc_at_shutdown()) while discharging on battery — calls
+ * power_shutdown(). A failed
  * gauge read marks the snapshot invalid and takes no action (fail-safe). Intended to
  * be called from the maintenance task, not at interrupt time.
  */

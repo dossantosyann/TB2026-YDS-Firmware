@@ -85,8 +85,9 @@ void input_get_diag(input_diag_t *out);
  *
  * The input service is the single choke point for all button activity, so this is the
  * device-wide user-idle time. Reset to zero each time a debounced press produces an
- * event; the volume potentiometer (a separate analog path) does not count. Building
- * block for a future screen auto-off / sleep policy -- this service applies no timeout.
+ * event; the volume potentiometer (a separate analog path) does not count. Consumed by
+ * the screen lock (UI task) and the idle auto power-off (maintenance task) -- this
+ * service applies no timeout itself.
  *
  * Lock-free single-word read. Returns 0 before input_init().
  *

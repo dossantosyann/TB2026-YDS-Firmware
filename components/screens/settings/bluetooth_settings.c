@@ -141,7 +141,7 @@ static void start_scan(void)
 
 /* ---- rendering ------------------------------------------------------------------- */
 
-/* One name, truncated to NAME_MAXCH characters, "(inconnu)" when empty. */
+/* One name, truncated to NAME_MAXCH characters, "(unknown)" when empty. */
 static void draw_name(int x, int y, const char *name, gfx_color_t col)
 {
     char buf[NAME_MAXCH + 1];

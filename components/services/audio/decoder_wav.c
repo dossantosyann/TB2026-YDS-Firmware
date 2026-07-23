@@ -2,9 +2,9 @@
  * @file decoder_wav.c
  * @brief WAV backend: PCM RIFF/WAVE, 16-bit or 24-bit, mono or stereo, up to 192 kHz.
  *
- * 16-bit rides straight through as int16. 24-bit is expanded from WAV's packed 3-byte
- * little-endian samples to the 32-bit MSB-justified word the ESP32 I2S peripheral expects
- * (sample in the high 24 bits, low byte 0). Mono is up-mixed to stereo.
+ * Every sample is expanded to the 32-bit MSB-justified word the ESP32 I2S peripheral
+ * expects: int16 shifted into the high 16 bits, WAV's packed 3-byte little-endian 24-bit
+ * samples into the high 24 bits (low byte 0). Mono is up-mixed to stereo.
  */
 #include "decoder_backend.h"
 #include "esp_log.h"

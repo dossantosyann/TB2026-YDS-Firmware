@@ -8,9 +8,10 @@
  * from an in-memory list: no re-scan on access (power), nothing happens with no card.
  *
  * The list holds only the audio files the decoder can open (.mp3 / .wav, case-insensitive),
- * sorted alphabetically (case-insensitive) so next/prev is deterministic. Each entry is a
- * full POSIX path ready to hand to decoder_open(); the display name is the part after the
- * last '/'. No metadata, no recursion, no persistent cache: just the flat index.
+ * found by a recursive walk of the card (hidden entries skipped), sorted alphabetically
+ * (case-insensitive) so next/prev is deterministic. Each entry is a full POSIX path ready to
+ * hand to decoder_open(); the display name is the part after the last '/'. No metadata, no
+ * persistent cache: just the flat index.
  */
 #pragma once
 
@@ -102,8 +103,9 @@ const char *storage_track_name(size_t index);
 /**
  * @brief Scan an arbitrary directory for playable tracks, rebuilding the index.
  *
- * The pure enumeration core: opendir/readdir + extension filter + sort, parameterised by
- * directory. @ref storage_init and @ref storage_rescan wrap it onto @ref SDCARD_MOUNT_POINT;
+ * The pure enumeration core: recursive opendir/readdir walk + extension filter + sort,
+ * parameterised by directory. @ref storage_init and @ref storage_rescan wrap it onto
+ * @ref SDCARD_MOUNT_POINT;
  * the host tests call it on a temporary folder, so the logic is exercised without hardware.
  *
  * @param root  Directory to scan (no trailing slash), e.g. "/sdcard".

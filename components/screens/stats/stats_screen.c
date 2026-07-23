@@ -376,7 +376,7 @@ static screen_t s_peripherals = DETAIL(render_peripherals);
 
 static const char *const s_labels[N_ITEMS] = { "Battery", "Storage", "Inputs", "Peripherals", "System" };
 static screen_t *const   s_targets[N_ITEMS] = { &s_battery, &s_storage, &s_inputs, &s_peripherals, &s_system };
-/* 16x16 type icons, parallel to s_labels; NULL until the icon exists. */
+/* 16x16 type icons, parallel to s_labels. */
 static const uint8_t *const s_icons[N_ITEMS] = { icon_stats_battery, icon_stats_storage, icon_stats_inputs, icon_stats_peripherals, icon_stats_system };
 static int s_sel = 0;
 

@@ -61,7 +61,7 @@
 #define TEXT_X1     (SHUF_ICON_X + ICON_SHUFFLE_W)     /* 148 */
 #define TEXT_MAX_W  (TEXT_X1 - TEXT_X0)                /* 144 */
 
-/* 2 px per 250 ms tick ≈ 8 px/s; 8-tick (2 s) pause before restarting */
+/* 8 px per 250 ms tick ≈ 32 px/s; 2-tick (0.5 s) pause at each end */
 #define SCROLL_SPEED  8
 #define SCROLL_PAUSE  2
 

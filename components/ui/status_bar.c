@@ -15,9 +15,9 @@
    separator line under the bar: a full-width horizontal run lights OFF pixels across
    the whole line on this passive OLED (IR drop on the shared common -- same reason
    root_menu uses corner brackets, not a bar). Text only keeps the lit-pixel count
-   (and power) minimal. The value refreshes on the next repaint, i.e. the next input
-   event; the UI is event-driven and deliberately does not wake on its own to update
-   the percentage. */
+   (and power) minimal. The value refreshes on the next repaint: the next input event,
+   or a live screen's refresh_ms timer; the bar itself never forces a wake-up just to
+   update the percentage. */
 #define MARGIN 2   /* px gap from the right edge */
 
 void status_bar_draw(void)
@@ -28,8 +28,7 @@ void status_bar_draw(void)
        panel: a dim antenna when the radio is off, a white antenna when it is on but not
        linked, and a white antenna with radiating waves once an A2DP link is up. No live
        RSSI of the active link is exposed, so "signal" is shown coarsely (present/absent),
-       not as a measured strength -- and the bar is event-driven, so it refreshes on the
-       next input, not on its own. */
+       not as a measured strength -- and it refreshes on the next repaint, not on its own. */
     if (!bluetooth_is_powered()) {
         gfx_blit_1bpp(MARGIN, 0, ICON_ANTENNA_W, ICON_ANTENNA_H,
                       icon_antenna, gfx_rgb(96, 96, 96));

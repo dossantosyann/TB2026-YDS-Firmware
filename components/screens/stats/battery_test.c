@@ -235,7 +235,7 @@ static void render(screen_t *self)
     }
     draw_pick_row(SINK_Y, sink, sink_on, s_focus == ZONE_SINK);
 
-    /* Readiness: live SOC, gated at 100% and off external power. */
+    /* Readiness: live SOC, gated at READY_SOC_PCT and off external power. */
     power_state_t p;
     power_get_state(&p);
     int  pct = (int)(p.soc_pct + 0.5f);

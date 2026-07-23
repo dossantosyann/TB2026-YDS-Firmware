@@ -89,9 +89,11 @@ void player_poll(void);
 /**
  * @brief Play the storage track at @p index (stops any current stream first).
  *
+ * If the output is Bluetooth and the speaker has not yet acknowledged the volume, the
+ * stream is deferred (never blast) and ESP_OK is returned; player_poll() starts it on the ack.
+ *
  * @param index  0-based storage index (as listed by the UI browser).
- * @return ESP_OK; ESP_ERR_INVALID_STATE if storage is not ready, or if the output is
- *         Bluetooth and the speaker has not yet acknowledged the volume (never blast);
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if storage is not ready;
  *         ESP_ERR_INVALID_ARG if @p index is out of range; otherwise the pipeline error.
  */
 esp_err_t player_play(size_t index);
@@ -100,10 +102,11 @@ esp_err_t player_play(size_t index);
  * @brief Start playback from the stopped state (e.g. first play after boot).
  *
  * Plays the playlist's current track. When shuffle is on, the play order is re-shuffled first so
- * a random track starts (see @ref playlist_random). A no-op unless currently stopped.
+ * a random track starts (see @ref playlist_random). A no-op unless currently stopped. If the
+ * output is Bluetooth and the speaker has not yet acknowledged the volume, the stream is
+ * deferred (never blast) and ESP_OK is returned; player_poll() starts it on the ack.
  *
- * @return ESP_OK; ESP_ERR_INVALID_STATE if not stopped, storage is not ready, or the output is
- *         Bluetooth and the speaker has not yet acknowledged the volume (never blast); otherwise
+ * @return ESP_OK; ESP_ERR_INVALID_STATE if not stopped or storage is not ready; otherwise
  *         the pipeline/playlist error.
  */
 esp_err_t player_start(void);

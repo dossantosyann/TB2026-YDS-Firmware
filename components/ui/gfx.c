@@ -113,8 +113,7 @@ void gfx_blit_1bpp(int x, int y, int w, int h, const uint8_t *bitmap, gfx_color_
 
 void gfx_flush(void)
 {
-    /* The framebuffer is native RGB565; any panel byte-order/remap (SSD1333 cmd 0x64)
-       belongs in display_oled when the SPI blit lands. TODO at hardware bring-up:
-       blit from a DMA-capable buffer. */
+    /* The framebuffer is native RGB565; display_oled_draw byte-swaps each pixel into
+       its own internal DMA-capable line buffer, so PSRAM never feeds the SPI DMA. */
     display_oled_draw((const uint8_t *)s_fb, sizeof s_fb);
 }

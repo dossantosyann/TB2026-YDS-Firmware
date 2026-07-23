@@ -20,10 +20,10 @@
 #define POT_BITWIDTH  ADC_BITWIDTH_DEFAULT  // 12-bit on ESP32
 
 /* PCM5242 digital-volume scale: register 0x00 = +24 dB, -0.5 dB per step. */
-#define DAC_REG0_DB       (24.0f)   /* hardware fact: register 0x00 = +24 dB */
+#define DAC_REG0_DB       (24.0f)
 #define DAC_DB_PER_STEP   (0.5f)
 
-/* Loudest gain the knob reaches at maximum. Capped at 0 dB (not the +24 dB the DAC allows)
+/* Loudest gain the knob reaches at maximum. Kept well below the +24 dB the DAC allows
    to avoid the harsh, ear-damaging saturation of positive digital gain. */
 #define DAC_MAX_DB        (-20.0f)
 

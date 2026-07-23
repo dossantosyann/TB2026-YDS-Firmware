@@ -4,8 +4,8 @@
  *
  * A standalone reader in the @ref services layer: it opens a file, parses the tags (ID3v2 with
  * an ID3v1 fallback for MP3), the duration and the audio format, then closes — no decoder, no
- * sink, no playback. This is what a future "now playing" screen calls for the current track and
- * what a future track browser calls per file (lazily, on demand) to show or sort by artist and
+ * sink, no playback. This is what the Now Playing screen calls for the current track and what
+ * a track browser can call per file (lazily, on demand) to show or sort by artist and
  * album. Reading one track at a time keeps SD and RAM cost flat; a library-wide pre-scan, if a
  * browser ever needs to sort the whole list, is just this call in a loop with the result cached.
  *

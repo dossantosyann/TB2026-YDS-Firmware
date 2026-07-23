@@ -15,6 +15,6 @@
  * @brief Get the Bluetooth A2DP sink (PCM -> ring buffer -> A2DP source -> speaker).
  *
  * @return Pointer to the static sink vtable (never NULL). start() requires a live Bluetooth
- *         connection (see bluetooth_connect_by_name()).
+ *         connection (see bluetooth_connect()).
  */
 const audio_sink_t *sink_bluetooth_get(void);

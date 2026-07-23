@@ -1,7 +1,7 @@
 /* Host unit test for the pure input logic (input_logic.c).
    Feeds sequences of (expander port byte, A level, timestamp) and asserts the produced
    ui_event_t stream: one event per press, bounce filtered, holds/releases silent, the
-   fuel-gauge INOKB (IO7) ignored, and the button->event mapping. No ESP-IDF, no hardware. */
+   charger INOKB (IO7) ignored, and the button->event mapping. No ESP-IDF, no hardware. */
 #include "input_logic.h"
 #include "board_pins.h"
 

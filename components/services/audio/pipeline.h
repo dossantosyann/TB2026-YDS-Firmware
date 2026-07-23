@@ -6,8 +6,8 @@
  * The pipeline owns one high-priority FreeRTOS task pinned to the application core (kept
  * off core 0, where the Wi-Fi/BT stack runs). The task drives a producer->consumer loop:
  * fill a buffer from the current source, hand it to sink->write(), repeat. Only the fill
- * step depends on the source: a synthetic sine (bring-up/diagnostic, below) or, once track
- * playback lands, the decoder. Everything else (task, buffering, sink sequencing, volume)
+ * step depends on the source: the decoder for file playback, or a synthetic sine
+ * (bring-up/diagnostic, below). Everything else (task, buffering, sink sequencing)
  * is shared, so the tone exercises the real pipeline without needing the SD card.
  *
  * Commands are posted from any task and serviced by the audio task; the public calls below

@@ -1,6 +1,7 @@
 /**
  * @file screen_settings.h
- * @brief Screen (display) settings sub-screen (reached from Settings). Stub for now.
+ * @brief Screen (display) settings sub-screen (reached from Settings): brightness
+ *        slider and auto-sleep delay.
  */
 #pragma once
 

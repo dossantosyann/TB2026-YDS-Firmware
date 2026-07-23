@@ -33,7 +33,8 @@ esp_err_t i2s_bus_init(i2s_chan_handle_t *out_tx_handle);
  *
  * @param tx       TX channel handle from i2s_bus_init().
  * @param rate_hz  Sample rate, 8000..192000.
- * @param bits     Sample width: 16 (MP3) or 24 (WAV).
+ * @param bits     Source sample width; currently ignored — the decoders always emit
+ *                 32-bit MSB-justified words, so the data width stays 32-bit.
  * @return ESP_OK on success, or the underlying driver error.
  */
 esp_err_t i2s_bus_reconfig(i2s_chan_handle_t tx, uint32_t rate_hz, uint8_t bits);

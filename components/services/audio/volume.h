@@ -44,10 +44,11 @@ typedef enum {
 esp_err_t volume_init(void);
 
 /**
- * @brief Sample the pot and write the DAC only if the mapped level changed.
+ * @brief Sample the pot and write the active output only if the mapped level changed.
  *
  * Call periodically (~10..20 Hz) from a maintenance/UI loop. The ADC read happens every
- * call (cheap); the I2C write is skipped when the level is unchanged (deadband).
+ * call (cheap; skipped under a fixed-volume override); the I2C/AVRCP write is skipped
+ * when the level is unchanged (deadband).
  *
  * @param[out] out_mv     Optional: wiper voltage in millivolts (for display). May be NULL.
  * @param[out] out_level  Optional: the level applied to the active output (DAC byte or AVRCP

@@ -1,6 +1,7 @@
 /**
  * @file storage_screen.h
- * @brief The Storage menu (top-level), reached from the home screen. Stub for now.
+ * @brief File browser over the SD card (top-level), reached from the home screen:
+ *        navigate folders, play or delete a track.
  */
 #pragma once
 

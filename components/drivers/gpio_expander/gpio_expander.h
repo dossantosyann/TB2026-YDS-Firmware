@@ -3,7 +3,7 @@
  * @brief PI4IOE5V9554A 8-bit I2C GPIO expander (PCA9554A-compatible) at 0x38.
  *
  * Channels are the EXP_* bit positions in board_pins.h. IO0/IO1 are outputs
- * (DAC mute, amp shutdown), IO2..IO7 are inputs (buttons, fuel-gauge INOKB).
+ * (DAC mute, amp shutdown), IO2..IO7 are inputs (buttons, charger INOKB).
  */
 #pragma once
 

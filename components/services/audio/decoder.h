@@ -7,12 +7,10 @@
  * file's magic bytes) and routes to the matching backend (libhelix MP3 or raw WAV). The
  * caller never sees which backend is active; it just reads PCM until end of file.
  *
- * Output layout is what the ESP32 I2S peripheral expects for the reported width, ready to
- * hand straight to sink->write():
- *   - 16-bit: int16 samples, 2 bytes each (MP3, 16-bit WAV);
- *   - 24-bit: uint32 samples MSB-justified (valid in the high 24 bits), 4 bytes each (WAV).
- * Always interleaved stereo (mono sources are up-mixed L=R), so the wired sink's fixed
- * stereo slots stay full.
+ * Output layout is always 32-bit MSB-justified words (4 bytes per sample), ready to hand
+ * straight to sink->write(): 16-bit sources sit in the high 16 bits, 24-bit sources in the
+ * high 24 bits. The format's `bits` field reports the source width only. Always interleaved
+ * stereo (mono sources are up-mixed L=R), so the wired sink's fixed stereo slots stay full.
  *
  * One stream at a time: decoder_open() while a stream is already open returns an error.
  */
@@ -33,8 +31,8 @@
  * @brief Largest number of PCM bytes a single decoder_read() can emit.
  *
  * One MP3 frame is at most 1152 samples/channel; up-mixed to stereo that is 2304 samples,
- * and at 24-bit width each sample is 4 bytes. The pcm buffer passed to decoder_read() must
- * be at least this big.
+ * each emitted as a 4-byte 32-bit word. The pcm buffer passed to decoder_read() must be at
+ * least this big.
  */
 #define DECODER_READ_BUF_BYTES  (2304 * 4)
 
@@ -42,7 +40,8 @@
 typedef struct {
     uint32_t rate_hz;      /**< Sample rate in Hz (e.g. 44100, up to 192000 for WAV). */
     uint8_t  channels;     /**< Always 2: mono sources are up-mixed to stereo. */
-    uint8_t  bits;         /**< Bits per sample: 16 (MP3, 16-bit WAV) or 24 (24-bit WAV). */
+    uint8_t  bits;         /**< Source bits per sample: 16 (MP3, 16-bit WAV) or 24 (24-bit WAV).
+                                Output samples are always 32-bit MSB-justified words. */
     uint32_t duration_ms;  /**< Track length in ms; 0 if unknown (e.g. headerless VBR MP3). */
 } decoder_format_t;
 

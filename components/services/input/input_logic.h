@@ -40,11 +40,11 @@ typedef struct {
  *
  * Detects the rising edge (released -> pressed) of each button and, if it clears the
  * @ref INPUT_DEBOUNCE_MS lockout, appends that button's @ref ui_event_t to @p out. Releases and
- * holds emit nothing; the expander's IO7 (fuel-gauge INOKB) is never a button and is ignored.
+ * holds emit nothing; the expander's IO7 (charger INOKB) is never a button and is ignored.
  *
  * @param st         Debounce state, carried across calls (zero-initialised on first use).
  * @param exp_port   Raw expander input port byte (bit n = channel n; buttons are active-low).
- * @param a_pressed  A button pressed (true when GPIO39 reads low).
+ * @param a_pressed  A button pressed (true when GPIO39 reads high — A is active-high).
  * @param now_ms     Monotonic timestamp in ms (e.g. esp_timer_get_time()/1000).
  * @param[out] out   Receives the events for newly pressed buttons.
  * @param out_cap    Capacity of @p out (use @ref INPUT_BTN_COUNT to never truncate).

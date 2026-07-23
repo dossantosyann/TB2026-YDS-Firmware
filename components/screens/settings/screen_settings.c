@@ -6,7 +6,7 @@
  *   - Brightness: LEFT/RIGHT dim/brighten the panel. The change is applied live to the
  *                 SSD1333 Master Current for immediate feedback, and persisted to NVS
  *                 ("oled_bri") once on exit -- only if it actually moved. Restored at boot
- *                 by screen_settings_restore(), called from app_run once the panel is up.
+ *                 by screen_settings_restore(), called from the UI task once the panel is up.
  *   - Sleep     : horizontal preset picker (LEFT/RIGHT cycles, wrapping) for the screen
  *                 auto-sleep delay. This is the same value edited under Settings > Power;
  *                 it is duplicated here (Screen is the natural home for a display timeout)

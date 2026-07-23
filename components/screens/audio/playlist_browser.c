@@ -236,7 +236,7 @@ static void handle_input(screen_t *self, ui_event_t ev)
         case UI_EVENT_SELECT:
             if (s_sel >= 1) {                            /* row 0 (current) is locked */
                 s_state      = PB_ACTION;
-                s_action_sel = default_action(len);      /* Move up when valid */
+                s_action_sel = default_action(len);      /* first valid action (Play now) */
             }
             break;
         case UI_EVENT_BACK:

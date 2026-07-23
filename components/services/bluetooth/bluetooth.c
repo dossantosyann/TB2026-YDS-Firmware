@@ -63,8 +63,8 @@ static volatile bluetooth_conn_state_t s_conn_state;  /* coarse state for the UI
    blob and is guarded by s_lock. */
 static bt_known_device_t  s_known[BLUETOOTH_MAX_KNOWN];
 static size_t             s_known_count;
-static esp_a2d_conn_hdl_t s_conn_hdl;    /* valid while connected; consumed by the BT sink */
-static uint16_t           s_audio_mtu;   /* negotiated audio MTU; caps the encoded send size */
+static esp_a2d_conn_hdl_t s_conn_hdl;    /* captured on connect; currently has no consumer */
+static uint16_t           s_audio_mtu;   /* negotiated audio MTU; logged only */
 static bool               s_avrc_connected; /* AVRCP control channel up (separate from A2DP) */
 static uint8_t            s_avrc_vol;       /* last requested absolute volume, 0..0x7F */
 static bool              s_avrc_have_vol;   /* a volume was requested at least once */

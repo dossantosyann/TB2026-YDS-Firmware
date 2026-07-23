@@ -31,8 +31,8 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Shared I2C master bus, owned here and handed to every device on it (expander now;
-   fuel gauge / DAC as those services are wired in). */
+/* Shared I2C master bus, owned here and handed to every device on it (GPIO expander,
+   fuel gauge, DAC control). */
 static i2c_master_bus_handle_t s_i2c;
 
 static void storage_scan_task(void *arg)
@@ -76,10 +76,10 @@ void app_init(void)
        glitch-free preload-high-then-drive; see power.c.) */
     power_self_hold();
 
-    /* DFS: let the CPU drop to 80 MHz whenever nothing demands more. Drivers (I2S,
-       SPI, I2C, BT) hold APB/CPU power-management locks while they are active, so
-       playback is never starved. No light sleep: it would gate the I2S clocks, and
-       the BT low-power clock would need a 32 kHz crystal this board doesn't have. */
+    /* CPU pinned at 160 MHz — DFS off (min = max): a frequency switch racing the BT
+       controller teardown left the system with no tick source (int-WDT, seen in the
+       field). No light sleep either: it would gate the I2S clocks, and the BT
+       low-power clock would need a 32 kHz crystal this board doesn't have. */
     esp_pm_config_t pm = { .max_freq_mhz = 160, .min_freq_mhz = 160 };
     ESP_ERROR_CHECK(esp_pm_configure(&pm));
 

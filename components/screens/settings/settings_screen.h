@@ -2,8 +2,7 @@
  * @file settings_screen.h
  * @brief The Settings menu (top-level), reached from the home screen.
  *
- * A vertical list with three sub-screens (Bluetooth, Audio, Screen), each a stub
- * for now.
+ * A vertical list over the four sub-screens: Bluetooth, Audio, Screen and Power.
  */
 #pragma once
 

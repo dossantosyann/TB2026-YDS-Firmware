@@ -8,8 +8,9 @@
  * routing entry point player_set_output(), which re-routes a live stream and powers the unused
  * path down itself -- so this screen only expresses the choice, it does not touch hardware.
  *
- * A Bluetooth switch can be refused when the speaker has not yet acknowledged its volume
- * (never blast): in that case the popup stays open and nothing changes.
+ * A Bluetooth switch is refused only when no speaker is connected (the row is dimmed); an
+ * un-acked speaker volume does not refuse it — the player defers the stream until the ack
+ * (never blast) and the switch call still succeeds.
  */
 #include "output_select.h"
 #include "bluetooth_settings.h"
@@ -62,8 +63,8 @@ static void handle_input(screen_t *self, ui_event_t ev)
             navigator_pop();
             break;
         case 1:
-            /* Inert while nothing is connected; otherwise switch, but keep the popup open if
-               the link cannot make the volume safe yet (player_set_output refuses). */
+            /* Inert while nothing is connected; otherwise switch (an un-acked volume only
+               defers the stream, it does not fail the call) and close the popup. */
             if (bluetooth_is_connected() &&
                 player_set_output(VOLUME_OUT_BT) == ESP_OK) {
                 navigator_pop();

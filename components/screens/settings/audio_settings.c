@@ -6,7 +6,7 @@
  * Now-Playing output popup (Jack / Bluetooth / BT Settings) but in the Settings red accent, and
  * applies the choice in place -- the active output keeps its filled dot, the Bluetooth row is
  * dimmed and inert while nothing is connected. The bottom is a centred balance slider: pushing
- * it left makes the LEFT channel louder, right the RIGHT one, up to +10 dB per side.
+ * it left makes the LEFT channel louder, right the RIGHT one, up to +20 dB per side.
  *
  * The slider drives the DAC L/R trim live (volume_set_balance) for immediate feedback; the value
  * is persisted to NVS once, on screen exit (volume_save_balance), and restored by volume_init at
@@ -138,8 +138,8 @@ static void activate(void)
         player_set_output(VOLUME_OUT_DAC);
         break;
     case SEL_BT:
-        /* Inert while nothing is connected; player_set_output refuses if the link cannot make
-           the volume safe yet (never blast) -- then nothing changes. */
+        /* Inert while nothing is connected (an un-acked speaker volume only defers the
+           stream, it does not fail the call). */
         if (bluetooth_is_connected()) player_set_output(VOLUME_OUT_BT);
         break;
     case SEL_BT_SETTINGS:

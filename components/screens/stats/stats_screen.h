@@ -1,6 +1,7 @@
 /**
  * @file stats_screen.h
- * @brief The Statistics menu (top-level), reached from the home screen. Stub for now.
+ * @brief The Statistics menu (top-level), reached from the home screen: five live
+ *        diagnostics pages (battery, storage, inputs, peripherals, system).
  */
 #pragma once
 

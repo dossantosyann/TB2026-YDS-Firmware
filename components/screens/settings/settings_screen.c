@@ -1,6 +1,6 @@
 /**
  * @file settings_screen.c
- * @brief Settings menu (top-level): a list over three sub-screens, stubs for now.
+ * @brief Settings menu (top-level): a list over the four settings sub-screens.
  *
  * Same shape as the statistics menu: content offset below the status bar, and a sober
  * ">" caret marks the selected row (no full white bar, which on this passive OLED lights
@@ -27,7 +27,7 @@
 
 static const char *const s_labels[N_ITEMS] = { "Bluetooth", "Audio", "Screen", "Power" };
 static screen_t         *s_targets[N_ITEMS];   /* seeded on first getter call */
-/* 16x16 type icons, parallel to s_labels; NULL until the icon exists. */
+/* 16x16 type icons, parallel to s_labels. */
 static const uint8_t *const s_icons[N_ITEMS] = { icon_bluetooth, icon_settings_audio, icon_settings_screen, icon_settings_power };
 static int s_sel = 0;
 

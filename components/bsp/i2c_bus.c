@@ -11,7 +11,7 @@ static i2c_master_bus_handle_t s_bus;
 esp_err_t i2c_bus_init(i2c_master_bus_handle_t *out_handle)
 {
     const i2c_master_bus_config_t cfg = {
-        .i2c_port = I2C_NUM_0,                  // which hardware controller
+        .i2c_port = I2C_NUM_0,
         .sda_io_num = PIN_I2C_SDA,              // GPIO32
         .scl_io_num = PIN_I2C_SCL,              // GPIO33
         .clk_source = I2C_CLK_SRC_DEFAULT,      // APB clock feeds the peripheral

@@ -1,6 +1,7 @@
 /**
  * @file audio_settings.h
- * @brief Audio settings sub-screen (reached from Settings). Stub for now.
+ * @brief Audio settings sub-screen (reached from Settings): output routing and
+ *        L/R balance slider.
  */
 #pragma once
 

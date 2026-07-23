@@ -40,8 +40,7 @@ static const char *const s_labels[N_ROWS] = {
     "Settings",
 };
 
-/* Destination screen per row (same order as s_icons). Stubs for now, so the whole
-   button navigation can be exercised; each gets fleshed out later. */
+/* Destination screen per row (same order as s_icons). */
 static screen_t *s_targets[N_ROWS];
 
 /* Accent color drawn on a row's icon while that row is selected; unselected icons

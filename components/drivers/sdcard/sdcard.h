@@ -38,9 +38,11 @@
 esp_err_t sdcard_mount(void);
 
 /**
- * @brief Unmount the FAT volume and free the SPI3 bus.
+ * @brief Unmount the FAT volume and detach the sdspi device.
  *
- * Flushes FATFS and releases the bus so SPI3 draws no power while idle.
+ * Flushes FATFS. The SPI3 bus itself stays initialized: on the classic ESP32 both
+ * SPI hosts share one DMA clock bit, so freeing SPI3 would stall an in-flight
+ * display (SPI2) DMA transfer (see sdcard_mount()).
  *
  * @return ESP_OK on success, or the underlying error.
  */

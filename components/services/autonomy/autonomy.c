@@ -36,7 +36,7 @@ static const char *TAG = "autonomy";
 /* Fixed, pot-independent volumes so a run is reproducible. Jack drives the analog amp, whose
    draw scales with volume, so 50% is a representative mid load. Bluetooth amplifies in the
    external (separately powered) speaker, so the AVRCP level does not affect this board's draw —
-   0% just keeps the speaker quiet without changing the measurement. */
+   a near-silent 1% just keeps the speaker quiet without changing the measurement. */
 #define JACK_VOL_PCT 50
 #define BT_VOL_PCT   1
 
@@ -243,7 +243,7 @@ static void add_sample(const power_state_t *p)
 
 static void finalize(autonomy_result_t result)
 {
-    workload_stop();                     /* stop playback and restore volume/output/repeat */
+    workload_stop();                     /* drop the fixed volume, restore repeat; playback keeps running */
     s_run.result   = (uint8_t)result;
     s_run.exported = 0;
     persist();
