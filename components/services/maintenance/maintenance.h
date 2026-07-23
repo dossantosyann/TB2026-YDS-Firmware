@@ -10,6 +10,9 @@
  * @note Développé avec l'assistance de Claude Opus 4.8 (Anthropic), sous la
  *       direction de Y. Dos Santos : spécification, revue et validation sur
  *       cible par l'auteur.
+ *
+ * @defgroup services Services
+ * @brief High-level services built on top of the drivers and bsp layers.
  */
 #pragma once
 
