@@ -30,9 +30,22 @@ ui/screens framebuffer rendering (no LVGL) + navigation
 A high-priority pinned audio task, a UI task and a maintenance task run under
 FreeRTOS; inputs arrive via interrupt into a single event queue.
 
+## Repository layout
+
+```
+components/bsp        SPI / I2C / I2S buses + volume ADC
+components/drivers    chip drivers (DAC, charger, fuel gauge, OLED, GPIO expander…)
+components/services   audio, bluetooth, storage, power, settings, autonomy, diag…
+components/screens    per-screen UI (framebuffer, no LVGL)
+components/ui         rendering + navigation core
+main                  app entry point and task setup
+test/host            off-target unit tests (run on the dev machine)
+```
+
 ## Build & flash
 
-Requires **ESP-IDF 6.0.1**.
+Requires **ESP-IDF 6.0.1** and the custom **TB2026-YDS** board (flash and serial
+console over USB-C, CP2102N auto-flash).
 
 ```bash
 idf.py build        # compile
@@ -50,6 +63,15 @@ doxygen Doxyfile        # output in html/index.html
 
 Browse the **Topics** tab for the logical module tree (e.g. *Board Support Package*),
 or the **Files** tab for the per-file view and the GPIO pin map.
+
+## Status
+
+Working on target: audio playback (jack + Bluetooth A2DP), microSD library and
+navigation, OLED UI, charging and fuel-gauge readout, power-saving and auto-off.
+
+Known limitations: headerless VBR MP3 duration is reported as unknown; the
+self-measured battery-autonomy test is built but its full-discharge validation is
+still pending; some Bluetooth reliability edge cases are under active work.
 
 ## AI assistance
 
