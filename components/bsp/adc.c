@@ -32,7 +32,7 @@
 
 /* Loudest gain the knob reaches at maximum. Kept well below the +24 dB the DAC allows
    to avoid the harsh, ear-damaging saturation of positive digital gain. */
-#define DAC_MAX_DB        (0.0f)
+#define DAC_MAX_DB        (0.0f) // After measuring with an oscilloscope, -6 dB is the value where there is no clipping with 32 ohm headphones
 
 /* Quietest gain the knob reaches at minimum, instead of the DAC's true mute. */
 #define POT_FLOOR_DB      (-60.0f)
