@@ -55,7 +55,11 @@ idf.py monitor      # serial console
 
 ## Documentation
 
-API reference is generated with **Doxygen**:
+API reference is generated with **Doxygen** and published online:
+
+**<https://tb2026-firmware.yanndossantos.ch>**
+
+To rebuild it locally:
 
 ```bash
 doxygen Doxyfile        # output in html/index.html
